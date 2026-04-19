@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { version } from '../../package.json';
 
 const api = {
   getBackendPort: (): Promise<number> => ipcRenderer.invoke('get-backend-port'),
@@ -7,6 +8,7 @@ const api = {
     ipcRenderer.invoke('read-file-bytes', filePath),
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   platform: process.platform,
+  appVersion: version,
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

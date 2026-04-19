@@ -4,9 +4,10 @@ import { getDb } from './database';
 import { listBooksBySeries, getChunks, getAbstracts } from './book-service';
 import { getEmbeddingModel } from './config-service';
 import type { ImportResult } from '@shared/types';
+import { version } from '../../../package.json';
 
 const CURRENT_SCHEMA_VERSION = 2;
-const APP_VERSION = '0.1.0';
+const APP_VERSION = version;
 
 // ── Export ────────────────────────────────────────────────────────────────────
 

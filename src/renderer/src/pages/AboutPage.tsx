@@ -1,6 +1,6 @@
 import styles from './AboutPage.module.css';
 
-const VERSION = '0.1.0';
+const VERSION = window.electronAPI.appVersion;
 
 const FONT_CREDITS = [
   { name: 'Cinzel', author: 'Vernon Adams', license: 'SIL OFL 1.1' },
