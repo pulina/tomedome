@@ -19,7 +19,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
-    "postinstall": "electron-rebuild -f -w better-sqlite3 && find node_modules/better-sqlite3 -name '*.node' -exec codesign --sign - --force {} \\;",
+    "postinstall": "node scripts/postinstall.js",
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
