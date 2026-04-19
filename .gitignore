@@ -1,0 +1,20 @@
+node_modules/
+out/
+dist/
+dist-electron/
+out-types/
+data/
+docs/test/data/public_domain/
+docs/test/data/proprietary/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.local
+.DS_Store
+*.log
+logs/
+.vite/
+
+# electron-builder (npm run dist)
+release/

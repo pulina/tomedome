@@ -1,0 +1,24 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px;
+  min-height: 100%;
+  background: var(--surface-page-tint);
+}
+
+.title {
+  font-family: var(--font-heading);
+  letter-spacing: var(--letter-spacing-heading);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.hint {
+  color: var(--color-text-secondary);
+}
+
+.link {
+  color: var(--color-highlight);
+}

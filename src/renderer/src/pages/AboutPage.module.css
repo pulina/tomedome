@@ -1,0 +1,174 @@
+.wrap {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--surface-page-tint);
+  backdrop-filter: blur(6px);
+}
+
+.page {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 0 12px;
+}
+
+.appName {
+  font-family: var(--font-heading);
+  font-size: 28px;
+  letter-spacing: var(--letter-spacing-heading);
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+}
+
+.versionBadge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-accent);
+  border: 1px solid var(--border-color-strong);
+  border-radius: var(--border-radius-sm);
+  padding: 2px 8px;
+}
+
+.tagline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.row {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  min-width: 60px;
+}
+
+.value {
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.valueMuted {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-color-strong);
+}
+
+.valueMuted:hover {
+  color: var(--color-accent);
+  text-decoration-color: var(--color-accent);
+}
+
+.licenseBlock {
+  padding: 14px 16px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.licenseName {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-primary);
+}
+
+.licenseText {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+}
+
+.creditTable {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+}
+
+.creditRow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.creditRow:last-child {
+  border-bottom: none;
+}
+
+.creditName {
+  flex: 1;
+  color: var(--color-text-primary);
+}
+
+.creditAuthor {
+  flex: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.creditLicense {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.helper {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.helper code {
+  color: var(--color-text-secondary);
+  background: var(--surface-panel);
+  padding: 1px 5px;
+  border-radius: var(--border-radius-sm);
+}

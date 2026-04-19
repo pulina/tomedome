@@ -1,0 +1,101 @@
+/* Techno-Gothic theme — default skin.
+   Fonts bundled locally via @fontsource — no network calls at runtime.
+   Licenses: Cinzel & Inter: SIL OFL 1.1; JetBrains Mono: SIL OFL 1.1.
+   License texts redistributed in the repo-root licenses/fonts/ directory. */
+@import '@fontsource/cinzel/latin-400.css';
+@import '@fontsource/cinzel/latin-500.css';
+@import '@fontsource/cinzel/latin-600.css';
+@import '@fontsource/inter/latin-300.css';
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-500.css';
+@import '@fontsource/inter/latin-600.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+
+:root[data-theme='techno-gothic'] {
+  /* Background surfaces */
+  --color-bg-primary: #0b0b0f;
+  --color-bg-secondary: #12101a;
+  --color-bg-tertiary: #2b2f38;
+
+  /* Text */
+  --color-text-primary: #d6d1c4;
+  --color-text-secondary: rgba(214, 209, 196, 0.6);
+  --color-text-muted: rgba(214, 209, 196, 0.35);
+
+  /* Accent */
+  --color-accent: #8b1e2d;
+  --color-accent-hover: #a52538;
+  --color-accent-muted: rgba(139, 30, 45, 0.3);
+  --color-highlight: #3fa7ff;
+
+  /* Semantic */
+  --color-success: #6bffb0;
+  --color-error: #ff6b6b;
+
+  /* Borders */
+  --border-color: rgba(139, 30, 45, 0.3);
+  --border-color-strong: rgba(139, 30, 45, 0.6);
+  --border-color-focus: rgba(139, 30, 45, 0.8);
+  --border-radius-sm: 2px;
+  --border-radius-md: 4px;
+
+  /* Typography */
+  --font-heading: 'Cinzel', serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --letter-spacing-heading: 0.08em;
+
+  /* Surfaces */
+  --surface-sidebar: rgba(11, 11, 15, 0.82);
+  --surface-main: rgba(11, 11, 15, 0.25);
+  --surface-panel: rgba(43, 47, 56, 0.4);
+  --surface-input: rgba(43, 47, 56, 0.7);
+  --surface-input-hover: rgba(43, 47, 56, 0.85);
+  --surface-overlay: rgba(11, 11, 15, 0.9);
+
+  /* Effects */
+  --shadow-panel: 0 0 0 1px rgba(139, 30, 45, 0.15);
+  --glow-accent: 0 0 12px rgba(139, 30, 45, 0.5);
+
+  /* Modal overlays & page tints (theme contract — module CSS) */
+  --overlay-modal-scrim: rgba(0, 0, 0, 0.62);
+  --overlay-modal-scrim-strong: rgba(0, 0, 0, 0.72);
+  --surface-page-tint: rgba(11, 11, 15, 0.55);
+  --surface-chat-card: rgba(11, 11, 15, 0.62);
+  --shadow-chat-title-wrap: 0 0 24px rgba(139, 30, 45, 0.18), 0 4px 32px rgba(0, 0, 0, 0.5);
+  --text-shadow-chat-title: 0 0 18px rgba(139, 30, 45, 0.6);
+  --surface-info-muted: rgba(63, 167, 255, 0.08);
+  --border-info-muted: rgba(63, 167, 255, 0.3);
+  --border-info-muted-soft: rgba(63, 167, 255, 0.2);
+  --color-warning-foreground: rgba(235, 185, 95, 0.95);
+  --border-warning-muted: rgba(220, 165, 70, 0.45);
+  --surface-warning-muted: rgba(220, 165, 70, 0.08);
+  --border-error-muted: rgba(255, 107, 107, 0.45);
+  --surface-error-muted: rgba(255, 107, 107, 0.08);
+  --surface-success-muted: rgba(80, 160, 100, 0.12);
+  --border-success-muted: rgba(80, 160, 100, 0.3);
+  --surface-amber-muted: rgba(200, 160, 32, 0.1);
+  --border-amber-muted: rgba(200, 160, 32, 0.25);
+  --surface-amber-raised: rgba(200, 160, 32, 0.15);
+  --border-amber-strong: rgba(200, 160, 32, 0.4);
+  --surface-amber-solid: rgba(200, 160, 32, 0.3);
+  --surface-amber-note: rgba(200, 160, 32, 0.12);
+  --border-amber-note: rgba(200, 160, 32, 0.3);
+  --border-settings-callout: rgba(63, 167, 255, 0.35);
+  --surface-settings-callout: rgba(63, 167, 255, 0.07);
+  --shadow-control-ring-dark: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  --surface-toggle-off: rgba(214, 209, 196, 0.2);
+  --surface-toggle-on: rgba(214, 209, 196, 0.45);
+  --shadow-toggle-success: 0 0 0 1px rgba(107, 255, 176, 0.35);
+  --shadow-toggle-error: 0 0 0 1px rgba(255, 107, 107, 0.35);
+  --surface-bar-positive: rgba(76, 175, 80, 0.18);
+  --surface-bar-caution: rgba(255, 183, 77, 0.18);
+  --surface-embedding-violet: rgba(108, 99, 255, 0.15);
+  --border-embedding-violet: rgba(108, 99, 255, 0.3);
+  --gradient-decor-spot-accent: rgba(139, 30, 45, 0.18);
+  --gradient-decor-spot-cyan: rgba(63, 167, 255, 0.08);
+  --gradient-decor-fade-start: rgba(11, 11, 15, 0.25);
+  --gradient-decor-fade-end: rgba(11, 11, 15, 0.4);
+  --grid-line-faint: rgba(139, 30, 45, 0.06);
+}

@@ -1,0 +1,36 @@
+.bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: #0b0b0f;
+  background-image: url('../assets/bg.png');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  /* Light tint so the background photograph stays clearly visible.
+     The side panels provide their own contrast, so the main area doesn't
+     need a heavy dark wash. */
+  background:
+    radial-gradient(ellipse at 50% 0%, var(--gradient-decor-spot-accent) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 100%, var(--gradient-decor-spot-cyan) 0%, transparent 50%),
+    linear-gradient(180deg, var(--gradient-decor-fade-start) 0%, var(--gradient-decor-fade-end) 100%);
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-line-faint) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line-faint) 1px, transparent 1px);
+  background-size: 40px 40px;
+}

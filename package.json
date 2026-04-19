@@ -1,0 +1,98 @@
+{
+  "name": "tomedome",
+  "productName": "TomeDome",
+  "version": "0.1.0",
+  "description": "TomeDome — AI Reading Companion for long book series",
+  "main": "./out/main/index.js",
+  "author": "Szymon Kuliński",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
+    "postinstall": "electron-rebuild -f -w better-sqlite3 && find node_modules/better-sqlite3 -name '*.node' -exec codesign --sign - --force {} \\;",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@fontsource/cinzel": "^5.2.8",
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@likecoin/epub-ts": "^0.6.3",
+    "better-sqlite3": "^12.9.0",
+    "cheerio": "^1.0.0",
+    "fastify": "^5.1.0",
+    "franc-min": "^6.2.0",
+    "jszip": "^3.10.1",
+    "linkedom": "^0.18.12",
+    "pino": "^9.5.0",
+    "pino-pretty": "^13.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.0.2",
+    "react-virtuoso": "^4.18.5",
+    "safe-regex2": "^5.1.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "40.9.1",
+    "electron-builder": "26.8.1",
+    "electron-vite": "2.3.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.tomedome.app",
+    "productName": "TomeDome",
+    "publish": null,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "icon": "build/icon.png",
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "deb",
+        "rpm"
+      ],
+      "category": "Office",
+      "synopsis": "AI Reading Companion for long book series",
+      "maintainer": "Szymon Kuliński <tomedome@users.noreply.github.com>"
+    }
+  }
+}

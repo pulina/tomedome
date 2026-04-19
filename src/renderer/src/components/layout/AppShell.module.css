@@ -1,0 +1,124 @@
+.app {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--color-text-primary);
+}
+
+.layout {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface-main);
+  /* No backdrop-filter here — keep the bg image crisp through the main pane.
+     Side panels keep their blur for legibility. */
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ── Collapsible panel wrappers ── */
+
+.sidebarWrap {
+  width: 210px;
+  min-width: 210px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  transition: width 220ms ease, min-width 220ms ease;
+}
+
+.sidebarWrapCollapsed {
+  width: 0;
+  min-width: 0;
+}
+
+.rightWrap {
+  width: 234px;
+  min-width: 234px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  transition: width 220ms ease, min-width 220ms ease;
+}
+
+.rightWrapCollapsed {
+  width: 0;
+  min-width: 0;
+}
+
+/* ── Toggle tabs on panel borders ── */
+
+.panelToggle {
+  position: absolute;
+  top: calc(50% - 18px);
+  width: 14px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  background: var(--surface-sidebar);
+  border: 1px solid var(--border-color-strong);
+  cursor: pointer;
+  z-index: 30;
+}
+
+.panelToggle:hover {
+  color: var(--color-text-primary);
+  background: var(--color-accent-muted);
+  border-color: var(--color-accent);
+}
+
+.sidebarToggle {
+  border-left: none;
+  border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
+  transition: left 220ms ease;
+}
+
+.rightToggle {
+  border-right: none;
+  border-radius: var(--border-radius-sm) 0 0 var(--border-radius-sm);
+  transition: right 220ms ease;
+}
+
+/* ── Drag-to-resize handles ── */
+
+.panelResizer {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+  opacity: 0;
+  background: var(--color-accent);
+  transition: opacity 150ms ease;
+}
+
+.panelResizer:hover,
+.panelResizerActive {
+  opacity: 0.25;
+}
+
+/* ── Suppress text selection and enforce cursor while dragging ── */
+
+.layoutDragging {
+  cursor: col-resize;
+  user-select: none;
+}

@@ -1,0 +1,316 @@
+.panel {
+  width: 100%;
+  min-width: 0;
+  background: var(--surface-sidebar);
+  border-left: 1px solid var(--border-color-strong);
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(12px);
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab {
+  flex: 1;
+  padding: 9px 4px;
+  font-size: 9px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.1em;
+  text-align: center;
+  color: var(--color-text-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 120ms;
+}
+
+.tab:hover {
+  color: var(--color-text-secondary);
+}
+
+.tabActive {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 10px;
+}
+
+.sectionTitle {
+  font-size: 9px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.15em;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+  opacity: 0.8;
+}
+
+.empty {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  padding: 14px 4px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* ── Tab badge (active job count) ── */
+.tabBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-text-primary);
+  font-size: 8px;
+  font-family: var(--font-mono);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* ── Task list header ── */
+.taskHeader {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.clearBtn {
+  padding: 3px 8px;
+  font-size: 8px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 120ms, border-color 120ms;
+}
+
+.clearBtn:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--border-color-strong);
+}
+
+/* ── Task list ── */
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jobCard {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  padding: 10px 10px 8px;
+}
+
+.jobHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.jobBook {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.jobType {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.jobStatus {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.jobEta {
+  color: var(--color-text-muted);
+}
+
+.cancelBtn {
+  margin-left: auto;
+  padding: 1px 5px;
+  font-size: 8px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.cancelBtn:hover {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.dismissBtn {
+  margin-left: auto;
+  padding: 1px 5px;
+  font-size: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  line-height: 1.4;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms, border-color 120ms;
+}
+
+.jobCard:hover .dismissBtn {
+  opacity: 1;
+}
+
+.dismissBtn:hover {
+  border-color: var(--border-color);
+  color: var(--color-text-secondary);
+}
+
+/* ── Progress bar ── */
+.progressTrack {
+  height: 2px;
+  background: var(--border-color);
+  border-radius: 1px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.progressBar {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 1px;
+  transition: width 400ms ease;
+}
+
+.progressLabel {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+}
+
+.progressPct {
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.jobModel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobError {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-error);
+  margin-top: 4px;
+  word-break: break-word;
+}
+
+/* ── Details tab ── */
+.detailsWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.detailsActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.detailRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 10px;
+}
+
+.detailLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-muted);
+  min-width: 72px;
+  flex-shrink: 0;
+}
+
+.detailValue {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-secondary);
+  word-break: break-all;
+}
+
+.detailError {
+  color: var(--color-error);
+}
+
+.detailSection {
+  font-family: var(--font-heading);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  opacity: 0.7;
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+
+.detailPre {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-secondary);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  padding: 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  margin: 0;
+}

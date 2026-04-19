@@ -1,0 +1,431 @@
+.wrap {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--surface-page-tint);
+  backdrop-filter: blur(6px);
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.banner {
+  padding: 12px 14px;
+  border: 1px solid var(--color-accent);
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-accent-muted);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border-radius: var(--border-radius-sm);
+}
+
+.spendingTip {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border-settings-callout);
+  border-radius: var(--border-radius-sm);
+  background: var(--surface-settings-callout);
+}
+
+.spendingTipIcon {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.spendingTipLabel {
+  font-family: var(--font-heading);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-highlight);
+  margin-bottom: 6px;
+}
+
+.spendingTipText {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.providerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.providerCard {
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  background: var(--surface-panel);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.providerCard:hover {
+  border-color: var(--border-color-strong);
+  background: var(--surface-input-hover);
+}
+
+.providerCardActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-muted);
+  box-shadow: var(--glow-accent);
+}
+
+.providerName {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-primary);
+}
+
+.providerDesc {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.input,
+.select {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--surface-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-primary);
+  font-size: 13px;
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--border-color-focus);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.button {
+  padding: 9px 18px;
+  background: var(--color-accent-muted);
+  border: 1px solid var(--border-color-strong);
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-heading);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--color-accent);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.buttonSecondary {
+  background: transparent;
+}
+
+.result {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: var(--border-radius-sm);
+}
+
+.resultSuccess {
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.resultError {
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+.helper {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.spinner {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--color-accent-muted);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loadingDot {
+  font-size: 14px;
+  color: var(--color-accent);
+  animation: spin 1.2s linear infinite;
+  display: inline-block;
+  line-height: 1;
+}
+
+.modelsError {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-warning, #e8a020);
+  cursor: default;
+}
+
+.modelInputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.modelInputRow .input {
+  flex: 1;
+}
+
+.backToListBtn {
+  padding: 9px 12px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.backToListBtn:hover {
+  border-color: var(--border-color-strong);
+  color: var(--color-text-primary);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--accent, #6c63ff);
+  cursor: pointer;
+}
+
+.sliderLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted, #888);
+}
+
+.tokenRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.tokenField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sectionDisabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.sectionBadgeUnsupported {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: normal;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--color-text-muted);
+  margin-left: 10px;
+}
+
+.rerankerRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.rerankerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-heading);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--color-accent);
+  text-transform: uppercase;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  padding-bottom: 2px;
+}
+
+.helperInline {
+  font-weight: normal;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.buttonDanger {
+  background: transparent;
+  border-color: var(--color-error, #c0392b);
+  color: var(--color-error, #c0392b);
+}
+
+.buttonDanger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error, #c0392b) 15%, transparent);
+}
+
+.dangerRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.dangerItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+}
+
+.dangerLabel {
+  font-size: 12px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.06em;
+  color: var(--color-text-primary);
+}
+
+.urlFieldRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.urlFieldRow .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.urlHealthDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-control-ring-dark);
+}
+
+.urlHealth_idle {
+  background: var(--surface-toggle-off);
+}
+
+.urlHealth_checking {
+  background: var(--surface-toggle-on);
+  animation: urlHealthPulse 1s ease-in-out infinite;
+}
+
+.urlHealth_ok {
+  background: var(--color-success);
+  box-shadow: var(--shadow-toggle-success);
+}
+
+.urlHealth_error {
+  background: var(--color-error);
+  box-shadow: var(--shadow-toggle-error);
+}
+
+@keyframes urlHealthPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

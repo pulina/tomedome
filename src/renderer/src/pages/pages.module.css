@@ -1,0 +1,25 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  gap: 12px;
+  background: var(--surface-page-tint);
+  backdrop-filter: blur(6px);
+}
+
+.title {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  letter-spacing: var(--letter-spacing-heading);
+  color: var(--color-text-primary);
+  text-transform: uppercase;
+}
+
+.subtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
