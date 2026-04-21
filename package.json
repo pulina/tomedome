@@ -1,7 +1,7 @@
 {
   "name": "tomedome",
   "productName": "TomeDome",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "TomeDome — AI Reading Companion for long book series",
   "main": "./out/main/index.js",
   "author": "Szymon Kuliński",

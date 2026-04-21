@@ -3,7 +3,11 @@ import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 import { bookApi } from '../../api/book-api';
 import { seriesApi } from '../../api/series-api';
 import type { BookStats, ChunkingOptions, EpubOptions, Series } from '@shared/types';
-import { DEFAULT_EPUB_OPTIONS } from '@shared/types';
+import {
+  DEFAULT_EPUB_OPTIONS,
+  DEFAULT_MAX_PARAGRAPHS_PER_CHAPTER_SECTION,
+  DEFAULT_MERGE_THRESHOLD,
+} from '@shared/types';
 import { resolveDroppedFilePath } from '../../utils/dndFilePath';
 import type { ChunkingUIState } from './chunking-types';
 import { CHAPTER_PRESETS, SECTION_PRESETS } from './constants';
@@ -62,18 +66,24 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [excludedChunkIndices, setExcludedChunkIndices] = useState<Set<number>>(new Set());
+  const [chapterTitleOverrides, setChapterTitleOverrides] = useState<Map<number, string>>(new Map());
 
   const [chapterPresets, setChapterPresets] = useState<Set<string>>(new Set(['markdown', 'allcaps']));
-  const [chapterCustomInput, setChapterCustomInput] = useState('');
-  const [chapterCustom, setChapterCustom] = useState('');
+  const [chapterCustoms, setChapterCustoms] = useState<string[]>([]);
   const [sectionPresets, setSectionPresets] = useState<Set<string>>(new Set());
-  const [sectionCustomInput, setSectionCustomInput] = useState('');
-  const [sectionCustom, setSectionCustom] = useState('');
+  const [sectionCustoms, setSectionCustoms] = useState<string[]>([]);
+  const [excludePatterns, setExcludePatterns] = useState<string[]>([]);
   const [minTokens, setMinTokens] = useState(3);
   const [maxTokens, setMaxTokens] = useState(600);
-  const [mergeThreshold, setMergeThreshold] = useState(100);
-  const [mergeThresholdCommitted, setMergeThresholdCommitted] = useState(100);
+  const [mergeThreshold, setMergeThreshold] = useState(DEFAULT_MERGE_THRESHOLD);
+  const [mergeThresholdCommitted, setMergeThresholdCommitted] = useState(DEFAULT_MERGE_THRESHOLD);
   const mergeThresholdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [maxParagraphsPerChapterSection, setMaxParagraphsPerChapterSection] = useState(
+    DEFAULT_MAX_PARAGRAPHS_PER_CHAPTER_SECTION,
+  );
+  const [maxParagraphsPerChapterSectionCommitted, setMaxParagraphsPerChapterSectionCommitted] =
+    useState(DEFAULT_MAX_PARAGRAPHS_PER_CHAPTER_SECTION);
+  const maxParasTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleMergeThresholdChange(v: number) {
     setMergeThreshold(v);
@@ -84,6 +94,17 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
   function handleMergeThresholdBlur() {
     if (mergeThresholdTimer.current) clearTimeout(mergeThresholdTimer.current);
     setMergeThresholdCommitted(mergeThreshold);
+  }
+
+  function handleMaxParagraphsPerChapterSectionChange(v: number) {
+    setMaxParagraphsPerChapterSection(v);
+    if (maxParasTimer.current) clearTimeout(maxParasTimer.current);
+    maxParasTimer.current = setTimeout(() => setMaxParagraphsPerChapterSectionCommitted(v), 1500);
+  }
+
+  function handleMaxParagraphsPerChapterSectionBlur() {
+    if (maxParasTimer.current) clearTimeout(maxParasTimer.current);
+    setMaxParagraphsPerChapterSectionCommitted(maxParagraphsPerChapterSection);
   }
 
   const [title, setTitle] = useState('');
@@ -128,15 +149,17 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
   const chunkingOptions: ChunkingOptions = {
     chapterPatterns: [
       ...CHAPTER_PRESETS.filter((p) => chapterPresets.has(p.id)).map((p) => p.pattern),
-      ...(chapterCustom ? [chapterCustom] : []),
+      ...chapterCustoms,
     ],
     sectionSeparators: [
       ...SECTION_PRESETS.filter((p) => sectionPresets.has(p.id)).map((p) => p.pattern),
-      ...(sectionCustom ? [sectionCustom] : []),
+      ...sectionCustoms,
     ],
+    excludePatterns: excludePatterns.length > 0 ? excludePatterns : undefined,
     minTokens,
     maxTokens,
     mergeThreshold,
+    maxParagraphsPerChapterSection,
     ...(epubOptions && { epubOptions }),
   };
 
@@ -146,15 +169,17 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
     const opts: ChunkingOptions = {
       chapterPatterns: [
         ...CHAPTER_PRESETS.filter((p) => chapterPresets.has(p.id)).map((p) => p.pattern),
-        ...(chapterCustom ? [chapterCustom] : []),
+        ...chapterCustoms,
       ],
       sectionSeparators: [
         ...SECTION_PRESETS.filter((p) => sectionPresets.has(p.id)).map((p) => p.pattern),
-        ...(sectionCustom ? [sectionCustom] : []),
+        ...sectionCustoms,
       ],
+      excludePatterns: excludePatterns.length > 0 ? excludePatterns : undefined,
       minTokens,
       maxTokens,
       mergeThreshold,
+      maxParagraphsPerChapterSection: maxParagraphsPerChapterSectionCommitted,
       ...(isEpubFile && {
         epubOptions: {
           boilerplateSelectors: epubBoilerplateSelectors,
@@ -167,6 +192,7 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
     setPreviewError(null);
     setStats(null);
     setExcludedChunkIndices(new Set());
+    setChapterTitleOverrides(new Map());
     bookApi
       .preview(filePath, opts)
       .then(({ stats: s, suggestedTitle: t, detectedLanguage: lang }) => {
@@ -177,7 +203,7 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
       .catch((e: Error) => setPreviewError(e.message))
       .finally(() => setPreviewLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filePath, chapterPresets, chapterCustom, sectionPresets, sectionCustom, minTokens, maxTokens, mergeThresholdCommitted, epubBoilerplateSelectors, epubSkipLabelPatterns, epubIncludeLabelPatterns]);
+  }, [filePath, chapterPresets, chapterCustoms, sectionPresets, sectionCustoms, excludePatterns, minTokens, maxTokens, mergeThresholdCommitted, maxParagraphsPerChapterSectionCommitted, epubBoilerplateSelectors, epubSkipLabelPatterns, epubIncludeLabelPatterns]);
 
   function toggleChapterPreset(id: string) {
     setChapterPresets((prev) => {
@@ -187,8 +213,12 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
     });
   }
 
-  function commitChapterCustom() {
-    setChapterCustom(chapterCustomInput.trim());
+  function addChapterCustom(v: string) {
+    setChapterCustoms((prev) => (prev.includes(v) ? prev : [...prev, v]));
+  }
+
+  function removeChapterCustom(v: string) {
+    setChapterCustoms((prev) => prev.filter((x) => x !== v));
   }
 
   function toggleSectionPreset(id: string) {
@@ -199,31 +229,59 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
     });
   }
 
-  function commitSectionCustom() {
-    setSectionCustom(sectionCustomInput.trim());
+  function addSectionCustom(v: string) {
+    setSectionCustoms((prev) => (prev.includes(v) ? prev : [...prev, v]));
+  }
+
+  function removeSectionCustom(v: string) {
+    setSectionCustoms((prev) => prev.filter((x) => x !== v));
+  }
+
+  function addExcludePattern(v: string) {
+    setExcludePatterns((prev) => (prev.includes(v) ? prev : [...prev, v]));
+  }
+
+  function removeExcludePattern(v: string) {
+    setExcludePatterns((prev) => prev.filter((x) => x !== v));
   }
 
   const chunkingUIState: ChunkingUIState = {
     chapterPresets,
-    chapterCustomInput,
-    chapterCustom,
+    chapterCustoms,
     sectionPresets,
-    sectionCustomInput,
-    sectionCustom,
+    sectionCustoms,
+    excludePatterns,
     minTokens,
     maxTokens,
     onToggleChapterPreset: toggleChapterPreset,
-    onChapterCustomInputChange: setChapterCustomInput,
-    onChapterCustomCommit: commitChapterCustom,
+    onChapterCustomAdd: addChapterCustom,
+    onChapterCustomRemove: removeChapterCustom,
     onToggleSectionPreset: toggleSectionPreset,
-    onSectionCustomInputChange: setSectionCustomInput,
-    onSectionCustomCommit: commitSectionCustom,
+    onSectionCustomAdd: addSectionCustom,
+    onSectionCustomRemove: removeSectionCustom,
+    onExcludeAdd: addExcludePattern,
+    onExcludeRemove: removeExcludePattern,
     onMinTokensChange: setMinTokens,
     onMaxTokensChange: setMaxTokens,
     mergeThreshold,
     onMergeThresholdChange: handleMergeThresholdChange,
     onMergeThresholdBlur: handleMergeThresholdBlur,
+    maxParagraphsPerChapterSection,
+    onMaxParagraphsPerChapterSectionChange: handleMaxParagraphsPerChapterSectionChange,
+    onMaxParagraphsPerChapterSectionBlur: handleMaxParagraphsPerChapterSectionBlur,
   };
+
+  function handleChapterTitleOverride(chapterNumber: number, title: string | null) {
+    setChapterTitleOverrides((prev) => {
+      const next = new Map(prev);
+      if (title === null || title === '') {
+        next.delete(chapterNumber);
+      } else {
+        next.set(chapterNumber, title);
+      }
+      return next;
+    });
+  }
 
   async function handleCreateSeries() {
     if (!newSeriesTitle.trim()) return;
@@ -288,6 +346,9 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
         jobs: Array.from(selectedJobs),
         chunkingOptions,
         excludedChunkIndices: excludedChunkIndices.size > 0 ? Array.from(excludedChunkIndices) : undefined,
+        chapterTitleOverrides: chapterTitleOverrides.size > 0
+          ? Object.fromEntries(chapterTitleOverrides)
+          : undefined,
       });
       onDone();
     } catch (e) {
@@ -361,6 +422,8 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
                 chunkingState={chunkingUIState}
                 excludedChunkIndices={excludedChunkIndices}
                 onToggleExclude={toggleExcludeChunk}
+                chapterTitleOverrides={chapterTitleOverrides}
+                onChapterTitleOverride={handleChapterTitleOverride}
                 showControls={false}
               />
             </>
@@ -373,6 +436,8 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
               chunkingState={chunkingUIState}
               excludedChunkIndices={excludedChunkIndices}
               onToggleExclude={toggleExcludeChunk}
+              chapterTitleOverrides={chapterTitleOverrides}
+              onChapterTitleOverride={handleChapterTitleOverride}
             />
           )}
           {step === 'meta' && (

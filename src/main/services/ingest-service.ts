@@ -10,7 +10,12 @@ async function getFranc(): Promise<(text: string) => string> {
   }
   return _franc;
 }
-import type { BookStats, ChunkingOptions } from '../../shared/types';
+import {
+  DEFAULT_MAX_PARAGRAPHS_PER_CHAPTER_SECTION,
+  DEFAULT_MERGE_THRESHOLD,
+  type BookStats,
+  type ChunkingOptions,
+} from '../../shared/types';
 
 // ISO 639-3 → display name for the most common languages
 const ISO_TO_NAME: Record<string, string> = {
@@ -28,13 +33,15 @@ export interface RawChunk {
   paragraphIndex: number;
   rawText: string;
   tokenCount: number;
+  /** Set during ingest before long-chapter sectioning; stripped from returned chunks. */
+  sourceEntryStart?: number;
+  sourceEntryEnd?: number;
 }
 
 /** Drop noise fragments; ~3 chars/token heuristic. */
 const MIN_TOKENS = 3;
 /** Default chunk ceiling (~2400 chars); allows long paragraphs split at sentences without targeting a fixed tokenizer window. */
 const MAX_TOKENS = 600;
-const DEFAULT_MERGE_THRESHOLD = 100;
 
 function countTokens(text: string): number {
   // ~4 chars per token for English prose — good enough without a full tokeniser
@@ -44,7 +51,7 @@ function countTokens(text: string): number {
 /** Regex used when no chapterPatterns are supplied in ChunkingOptions. */
 const DEFAULT_CHAPTER_PATTERNS: RegExp[] = [
   /^#{1,3}\s+\S/,               // Markdown headings (## Title)
-  /^(?=.*[A-Z])[^a-z]{1,200}$/, // ALL-CAPS line (no lowercase, at least one uppercase letter)
+  /^(?=.*\p{L})[\p{Lu}\p{N}\p{Z}\p{P}]{1,200}$/u, // ALL-CAPS line (no lowercase, at least one letter)
 ];
 
 /** Guard regex compilation from huge user strings. */
@@ -83,6 +90,12 @@ function compilePatterns(patterns: string[], flags = ''): RegExp[] {
   });
 }
 
+interface ParaEntry {
+  text: string;
+  chapterNumber: number | null;
+  chapterTitle: string | null;
+}
+
 function detectChapter(line: string, patterns: RegExp[]): string | null {
   // Skip markdown inline formatting (e.g. **BOLD** or *italic*) before any check
   if (/^[*_]/.test(line)) return null;
@@ -105,108 +118,266 @@ export async function parseFile(filePath: string, options?: ChunkingOptions): Pr
 
 /**
  * Split plain text into chunks: paragraph breaks from blank lines / section rules,
- * then oversized paragraphs split on sentence boundaries; optional merge pass
- * combines tiny trailing pieces within a chapter.
+ * oversized paragraphs split on sentence boundaries; optional merge pass combines
+ * tiny pieces within a chapter; optional long-chapter sectioning uses source paragraph
+ * counts after merge (including preamble when the run exceeds the limit).
  */
 export function chunkText(text: string, options?: ChunkingOptions): RawChunk[] {
   const chapterPatterns: RegExp[] =
     options?.chapterPatterns !== undefined
-      ? compilePatterns(options.chapterPatterns, 'i')
+      ? compilePatterns(options.chapterPatterns, 'iu')
       : DEFAULT_CHAPTER_PATTERNS;
 
   const sectionSeparators: RegExp[] = compilePatterns(options?.sectionSeparators ?? []);
+  const excludePatterns: RegExp[] = compilePatterns(options?.excludePatterns ?? [], 'i');
   const minTokens = options?.minTokens ?? MIN_TOKENS;
   const maxTokens = options?.maxTokens ?? MAX_TOKENS;
 
-  const lines = text.split('\n');
-  const paragraphs: string[] = [];
+  // ── 1. Paragraph separation ───────────────────────────────────────────────
+  // Split by blank lines and section separators only — no chapter detection yet.
+  const rawParagraphs: string[] = [];
   let current: string[] = [];
-  let currentChapter: string | null = null;
-  const chapterByParagraph: (string | null)[] = [];
-  const chapterNumberByParagraph: (number | null)[] = [];
-  let chapterCount = 0;
-
-  for (const line of lines) {
-    const chapterName = detectChapter(line.trim(), chapterPatterns);
-    if (chapterName) {
-      // Flush current paragraph before new chapter
-      if (current.length > 0) {
-        paragraphs.push(current.join('\n').trim());
-        chapterByParagraph.push(currentChapter);
-        chapterNumberByParagraph.push(chapterCount || null);
-        current = [];
-      }
-      chapterCount++;
-      currentChapter = chapterName;
-      continue;
-    }
-
+  for (const line of text.split('\n')) {
     const isBreak =
       line.trim() === '' ||
       (sectionSeparators.length > 0 && sectionSeparators.some((p) => p.test(line.trim())));
     if (isBreak) {
-      if (current.length > 0) {
-        paragraphs.push(current.join('\n').trim());
-        chapterByParagraph.push(currentChapter);
-        chapterNumberByParagraph.push(chapterCount || null);
-        current = [];
-      }
+      if (current.length > 0) { rawParagraphs.push(current.join('\n').trim()); current = []; }
     } else {
       current.push(line);
     }
   }
-  if (current.length > 0) {
-    paragraphs.push(current.join('\n').trim());
-    chapterByParagraph.push(currentChapter);
-    chapterNumberByParagraph.push(chapterCount || null);
-  }
+  if (current.length > 0) rawParagraphs.push(current.join('\n').trim());
 
-  const chunks: RawChunk[] = [];
-  let index = 0;
-  for (let i = 0; i < paragraphs.length; i++) {
-    const currentParagraph = paragraphs[i];
-    if (!currentParagraph) continue;
-    const tokens = countTokens(currentParagraph);
-    if (tokens < minTokens) continue; // skip tiny fragments
-    if (tokens > maxTokens) {
-      // Split long paragraphs into sentence-boundary chunks
-      const sentences = currentParagraph.match(/[^.!?]+[.!?]+/g) ?? [currentParagraph];
-      let buf = '';
-      for (const s of sentences) {
-        if (countTokens(buf + s) > maxTokens && buf) {
-          chunks.push({
-            chapterNumber: chapterNumberByParagraph[i] ?? null,
-            chapterTitle: chapterByParagraph[i] ?? null,
-            paragraphIndex: index++,
-            rawText: buf.trim(),
-            tokenCount: countTokens(buf.trim()),
-          });
-          buf = s;
-        } else {
-          buf += s;
+  // ── 2. Exclude paragraphs ─────────────────────────────────────────────────
+  const keptParagraphs = excludePatterns.length > 0
+    ? rawParagraphs.filter((p) => !excludePatterns.some((re) => re.test(p)))
+    : rawParagraphs;
+
+  // ── 3. Chapter detection ──────────────────────────────────────────────────
+  // Walk line-by-line within each kept paragraph so headers not surrounded by
+  // blank lines are still detected (common in plain-text books).
+  const entries: ParaEntry[] = [];
+  let chapterCount = 0;
+  let currentChapter: string | null = null;
+
+  for (const para of keptParagraphs) {
+    let buf: string[] = [];
+    for (const line of para.split('\n')) {
+      const chapterName = detectChapter(line.trim(), chapterPatterns);
+      if (chapterName) {
+        if (buf.length > 0) {
+          const t = buf.join('\n').trim();
+          if (t) entries.push({ text: t, chapterNumber: chapterCount || null, chapterTitle: currentChapter });
+          buf = [];
         }
+        chapterCount++;
+        currentChapter = chapterName;
+      } else {
+        buf.push(line);
       }
-      if (buf.trim() && countTokens(buf.trim()) >= minTokens) {
-        chunks.push({
-          chapterNumber: chapterNumberByParagraph[i] ?? null,
-          chapterTitle: chapterByParagraph[i] ?? null,
-          paragraphIndex: index++,
-          rawText: buf.trim(),
-          tokenCount: countTokens(buf.trim()),
-        });
-      }
-    } else {
-      chunks.push({
-        chapterNumber: chapterNumberByParagraph[i] ?? null,
-        chapterTitle: chapterByParagraph[i] ?? null,
-        paragraphIndex: index++,
-        rawText: currentParagraph,
-        tokenCount: tokens,
-      });
+    }
+    if (buf.length > 0) {
+      const t = buf.join('\n').trim();
+      if (t) entries.push({ text: t, chapterNumber: chapterCount || null, chapterTitle: currentChapter });
     }
   }
+
+  const maxParasRaw = options?.maxParagraphsPerChapterSection;
+  const maxParas =
+    maxParasRaw === 0
+      ? 0
+      : (maxParasRaw ?? DEFAULT_MAX_PARAGRAPHS_PER_CHAPTER_SECTION);
+  const trackSources = maxParas > 0;
+
+  // ── 4. Build chunks (enforce token size limits) ───────────────────────────
+  const chunks: RawChunk[] = [];
+  const indexRef = { i: 0 };
+  for (let ei = 0; ei < entries.length; ei++) {
+    const { text: para, chapterNumber, chapterTitle } = entries[ei]!;
+    pushTokenChunksForParagraph(
+      para,
+      chapterNumber,
+      chapterTitle,
+      minTokens,
+      maxTokens,
+      chunks,
+      indexRef,
+      trackSources ? ei : undefined,
+    );
+  }
+
+  // ── 5. Merge small chunks within the same section (including preamble) ──────
   const mergeThreshold = options?.mergeThreshold ?? DEFAULT_MERGE_THRESHOLD;
-  return mergeThreshold > 0 ? mergeSmallChunks(chunks, mergeThreshold) : chunks;
+  let merged = mergeThreshold > 0 ? mergeSmallChunks(chunks, mergeThreshold) : chunks;
+
+  // ── 6. Long chapters: assign sections from source paragraphs (after merge) ─
+  if (maxParas > 0 && entries.length > 0) {
+    merged = applyLongChapterSectionsAfterMerge(entries, merged, maxParas, minTokens, maxTokens);
+  }
+
+  return stripChunkSourceFields(merged);
+}
+
+function pushTokenChunksForParagraph(
+  para: string,
+  chapterNumber: number | null,
+  chapterTitle: string | null,
+  minTokens: number,
+  maxTokens: number,
+  out: RawChunk[],
+  indexRef: { i: number },
+  sourceEI?: number,
+): void {
+  if (!para) return;
+  const tokens = countTokens(para);
+  if (tokens < minTokens) return;
+
+  const push = (rawText: string, tokenCount: number) => {
+    const row: RawChunk = {
+      chapterNumber,
+      chapterTitle,
+      paragraphIndex: indexRef.i++,
+      rawText,
+      tokenCount,
+    };
+    if (sourceEI !== undefined) {
+      row.sourceEntryStart = sourceEI;
+      row.sourceEntryEnd = sourceEI;
+    }
+    out.push(row);
+  };
+
+  if (tokens > maxTokens) {
+    const sentences = para.match(/[^.!?]+[.!?]+/g) ?? [para];
+    let buf = '';
+    for (const s of sentences) {
+      if (countTokens(buf + s) > maxTokens && buf) {
+        const t = buf.trim();
+        push(t, countTokens(t));
+        buf = s;
+      } else {
+        buf += s;
+      }
+    }
+    if (buf.trim() && countTokens(buf.trim()) >= minTokens) {
+      const t = buf.trim();
+      push(t, countTokens(t));
+    }
+  } else {
+    push(para, tokens);
+  }
+}
+
+/** Maps each source paragraph index to a section id and title. Runs longer than maxParas are subdivided (including preamble). */
+function buildEntrySectionAssignments(
+  entries: ParaEntry[],
+  maxParas: number,
+): Array<{ sectionId: number; chapterTitle: string | null }> {
+  const meta: Array<{ sectionId: number; chapterTitle: string | null }> = new Array(entries.length);
+  let nextSectionId = 1;
+  let i = 0;
+  while (i < entries.length) {
+    const cn = entries[i]!.chapterNumber;
+    let j = i + 1;
+    while (j < entries.length && entries[j]!.chapterNumber === cn) j++;
+    const title = entries[i]!.chapterTitle;
+    const runLen = j - i;
+    const mustSubdivide = runLen > maxParas;
+
+    if (!mustSubdivide) {
+      const sid = nextSectionId++;
+      for (let k = i; k < j; k++) meta[k] = { sectionId: sid, chapterTitle: title };
+    } else {
+      for (let b = i; b < j; b += maxParas) {
+        const be = Math.min(b + maxParas, j);
+        const sid = nextSectionId++;
+        for (let k = b; k < be; k++) meta[k] = { sectionId: sid, chapterTitle: title };
+      }
+    }
+    i = j;
+  }
+  return meta;
+}
+
+function applyLongChapterSectionsAfterMerge(
+  entries: ParaEntry[],
+  chunks: RawChunk[],
+  maxParas: number,
+  minTokens: number,
+  maxTokens: number,
+): RawChunk[] {
+  const meta = buildEntrySectionAssignments(entries, maxParas);
+  const out: RawChunk[] = [];
+  const indexRef = { i: 0 };
+
+  for (const c of chunks) {
+    const es = c.sourceEntryStart;
+    const ee = c.sourceEntryEnd;
+    if (es === undefined || ee === undefined) {
+      out.push({ ...c, paragraphIndex: indexRef.i++ });
+      continue;
+    }
+
+    if (meta[es]!.sectionId === meta[ee]!.sectionId) {
+      out.push({
+        ...c,
+        chapterNumber: meta[es]!.sectionId,
+        chapterTitle: meta[es]!.chapterTitle,
+        paragraphIndex: indexRef.i++,
+      });
+      continue;
+    }
+
+    let g0 = es;
+    let curSid = meta[es]!.sectionId;
+    for (let k = es + 1; k <= ee; k++) {
+      if (meta[k]!.sectionId !== curSid) {
+        const text = entries
+          .slice(g0, k)
+          .map((e) => e.text)
+          .join('\n\n');
+        pushTokenChunksForParagraph(
+          text,
+          meta[g0]!.sectionId,
+          meta[g0]!.chapterTitle,
+          minTokens,
+          maxTokens,
+          out,
+          indexRef,
+          undefined,
+        );
+        g0 = k;
+        curSid = meta[k]!.sectionId;
+      }
+    }
+    const text = entries
+      .slice(g0, ee + 1)
+      .map((e) => e.text)
+      .join('\n\n');
+    pushTokenChunksForParagraph(
+      text,
+      meta[g0]!.sectionId,
+      meta[g0]!.chapterTitle,
+      minTokens,
+      maxTokens,
+      out,
+      indexRef,
+      undefined,
+    );
+  }
+
+  return out;
+}
+
+function stripChunkSourceFields(chunks: RawChunk[]): RawChunk[] {
+  return chunks.map((c, i) => ({
+    chapterNumber: c.chapterNumber,
+    chapterTitle: c.chapterTitle,
+    paragraphIndex: i,
+    rawText: c.rawText,
+    tokenCount: c.tokenCount,
+  }));
 }
 
 function mergeSmallChunks(chunks: RawChunk[], threshold: number): RawChunk[] {
@@ -215,13 +386,18 @@ function mergeSmallChunks(chunks: RawChunk[], threshold: number): RawChunk[] {
     const lastIdx = result.length - 1;
     const last = lastIdx >= 0 ? result[lastIdx] : undefined;
     if (last && last.tokenCount < threshold && last.chapterNumber === chunk.chapterNumber) {
-      result[lastIdx] = {
+      const mergedRow: RawChunk = {
         chapterNumber: last.chapterNumber,
         chapterTitle: last.chapterTitle,
         paragraphIndex: last.paragraphIndex,
         rawText: last.rawText + '\n\n' + chunk.rawText,
         tokenCount: last.tokenCount + chunk.tokenCount,
       };
+      if (last.sourceEntryStart !== undefined && chunk.sourceEntryEnd !== undefined) {
+        mergedRow.sourceEntryStart = last.sourceEntryStart;
+        mergedRow.sourceEntryEnd = chunk.sourceEntryEnd;
+      }
+      result[lastIdx] = mergedRow;
     } else {
       result.push({ ...chunk });
     }

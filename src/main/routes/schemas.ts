@@ -72,6 +72,7 @@ export const schemas = {
       },
       chunkingOptions: { type: 'object', additionalProperties: true },
       excludedChunkIndices: { type: 'array', items: { type: 'integer' } },
+      chapterTitleOverrides: { type: 'object', additionalProperties: { type: 'string' } },
     },
   },
   bookJobBody: {

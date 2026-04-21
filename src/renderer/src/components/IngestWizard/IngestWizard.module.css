@@ -11,8 +11,7 @@
 }
 
 .modal {
-  width: 580px;
-  max-width: calc(100vw - 40px);
+  width: min(900px, calc(100vw - 40px));
   max-height: calc(100vh - 60px);
   background: var(--color-bg-secondary);
   border: 1px solid var(--border-color-strong);
@@ -292,6 +291,34 @@
   color: var(--color-accent);
   white-space: nowrap;
   flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 1px 3px;
+}
+
+.chapterDividerLabel:hover {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+.chapterDividerLabelOverridden {
+  opacity: 0.85;
+}
+
+.chapterDividerInput {
+  font-family: var(--font-heading);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
+  border-radius: 2px;
+  outline: none;
+  padding: 1px 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 60px;
+  width: auto;
 }
 
 .chunkRow {
@@ -344,6 +371,14 @@
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  cursor: pointer;
+  white-space: pre-wrap;
+}
+
+.chunkRowTextExpanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 
 .loadMoreRow {

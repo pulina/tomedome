@@ -1,6 +1,6 @@
 export const CHAPTER_PRESETS = [
   { id: 'markdown', label: 'Markdown heading (##)', pattern: '^#{1,3}\\s+\\S', hint: '## Chapter One' },
-  { id: 'allcaps', label: 'ALL-CAPS line', pattern: '^(?=.*[A-Z])[^a-z]{1,200}$', hint: 'CHAPTER ONE' },
+  { id: 'allcaps', label: 'ALL-CAPS line', pattern: '^(?=.*\\p{L})[\\p{Lu}\\p{N}\\p{Z}\\p{P}]{1,200}$', hint: 'CHAPTER ONE' },
   { id: 'numbered', label: 'Numbered (1. Title)', pattern: '^\\d+[.:][ \\t]', hint: '1. Chapter One' },
   { id: 'roman', label: 'Roman numerals (VIII.)', pattern: '^[IVXLCDMivxlcdm]+[.:][ \\t]', hint: 'VIII. Title' },
   { id: 'chapter_kw', label: 'Chapter keyword', pattern: '^chapter[ \\t]', hint: 'Chapter One' },

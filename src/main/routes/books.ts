@@ -27,6 +27,7 @@ interface CreateBookBody {
   jobs?: string[];
   chunkingOptions?: ChunkingOptions;
   excludedChunkIndices?: number[];
+  chapterTitleOverrides?: Record<string, string>;
 }
 
 export async function registerBookRoutes(fastify: FastifyInstance): Promise<void> {
@@ -69,6 +70,7 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
         jobs: jobTypes = [],
         chunkingOptions,
         excludedChunkIndices,
+        chapterTitleOverrides,
       } = req.body ?? {};
       if (!seriesId || !filePath || !title)
         return reply.code(400).send(apiErr('validation', 'seriesId, filePath and title required'));
@@ -76,7 +78,14 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
         const text = await parseFile(filePath, chunkingOptions);
         const allChunks = chunkText(text, chunkingOptions);
         const excluded = new Set(excludedChunkIndices ?? []);
-        const chunks = excluded.size > 0 ? allChunks.filter((_, i) => !excluded.has(i)) : allChunks;
+        let chunks = excluded.size > 0 ? allChunks.filter((_, i) => !excluded.has(i)) : allChunks;
+        if (chapterTitleOverrides && Object.keys(chapterTitleOverrides).length > 0) {
+          chunks = chunks.map((c) => {
+            if (c.chapterNumber === null) return c;
+            const override = chapterTitleOverrides[String(c.chapterNumber)];
+            return override ? { ...c, chapterTitle: override } : c;
+          });
+        }
         if (chunks.length === 0)
           return reply.code(422).send(apiErr('unprocessable', 'No parseable content found'));
         const wordCount = chunks.reduce((a, c) => a + c.rawText.split(/\s+/).length, 0);

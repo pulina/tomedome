@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-21
+
+### Added
+
+- **Book import API**: optional `chapterTitleOverrides` so chapter labels edited in preview are applied when chunks are persisted.
+
+### Changed
+
+- **Chunking pipeline**: Unicode-aware chapter detection (incl. non-Latin “all-caps” lines); chapter headers can be found inside multi-line paragraphs; optional `excludePatterns` to drop paragraphs before chunking; merge pass then long-chapter sectioning using source-paragraph spans. Defaults for merge threshold and max paragraphs per section are **300** (`DEFAULT_MERGE_THRESHOLD`, `DEFAULT_MAX_PARAGRAPHS_PER_CHAPTER_SECTION`); omitting API fields uses those defaults; `maxParagraphsPerChapterSection: 0` disables sectioning.
+- **Ingest preview / wizard**: Exclude specific chunks from import; per-chapter title overrides in the UI; clearer custom-regex editing (tag lists); expandable chunk bodies and layout tweaks; preview stats and cost hints reflect chunks that stay after exclusions.
+
 ## [0.1.2] - 2026-04-21
 
 ### Changed
@@ -43,7 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stats and logs page for monitoring ingestion jobs and LLM call history
 - Cross-platform builds: macOS (arm64, x64), Windows (x64), Linux (deb, rpm)
 
-[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/pulina/tomedome/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/pulina/tomedome/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pulina/tomedome/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pulina/tomedome/releases/tag/v0.1.0

@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useRef, useState } from 'react';
 import type { BookStats } from '@shared/types';
 import { CHAPTER_PRESETS, PREVIEW_PAGE, SECTION_PRESETS } from '../constants';
 import type { ChunkingUIState } from '../chunking-types';
+import { TagListEditor } from '../TagListEditor';
 import styles from '../IngestWizard.module.css';
 
 interface Props {
@@ -11,7 +12,39 @@ interface Props {
   chunkingState: ChunkingUIState;
   excludedChunkIndices: Set<number>;
   onToggleExclude: (index: number) => void;
+  chapterTitleOverrides: Map<number, string>;
+  onChapterTitleOverride: (chapterNumber: number, title: string | null) => void;
   showControls?: boolean;
+}
+
+function CustomPatternInput({
+  placeholder,
+  title,
+  onAdd,
+}: {
+  placeholder: string;
+  title?: string;
+  onAdd: (v: string) => void;
+}) {
+  const [input, setInput] = useState('');
+  function commit() {
+    const v = input.trim();
+    if (v) { onAdd(v); setInput(''); }
+  }
+  return (
+    <div className={styles.customRow}>
+      <input
+        className={styles.customInput}
+        placeholder={placeholder}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+        spellCheck={false}
+        title={title}
+      />
+      <button className={styles.applyBtn} onClick={commit} disabled={!input.trim()}>Add</button>
+    </div>
+  );
 }
 
 export function StepPreview({
@@ -21,14 +54,43 @@ export function StepPreview({
   chunkingState,
   excludedChunkIndices,
   onToggleExclude,
+  chapterTitleOverrides,
+  onChapterTitleOverride,
   showControls = true,
 }: Props) {
   const [visible, setVisible] = useState(PREVIEW_PAGE);
   const [showOptions, setShowOptions] = useState(false);
   const [pendingScrollToBottom, setPendingScrollToBottom] = useState(false);
+  const [editingChapter, setEditingChapter] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [expandedChunks, setExpandedChunks] = useState<Set<number>>(new Set());
+
+  function toggleExpand(index: number) {
+    setExpandedChunks((prev) => {
+      const next = new Set(prev);
+      next.has(index) ? next.delete(index) : next.add(index);
+      return next;
+    });
+  }
   const spineRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setVisible(PREVIEW_PAGE); }, [stats]);
+  function startEdit(chapterNumber: number, currentLabel: string) {
+    setEditingChapter(chapterNumber);
+    setEditValue(currentLabel);
+  }
+
+  function commitEdit() {
+    if (editingChapter !== null) {
+      onChapterTitleOverride(editingChapter, editValue.trim() || null);
+      setEditingChapter(null);
+    }
+  }
+
+  function cancelEdit() {
+    setEditingChapter(null);
+  }
+
+  useEffect(() => { setVisible(PREVIEW_PAGE); setExpandedChunks(new Set()); }, [stats]);
 
   useEffect(() => {
     if (pendingScrollToBottom && spineRef.current) {
@@ -55,19 +117,24 @@ export function StepPreview({
             <span className={styles.presetHint}>{preset.hint}</span>
           </label>
         ))}
-        <div className={styles.customRow}>
-          <input
-            className={styles.customInput}
-            placeholder="Custom regex… e.g. ^letter\s+\d+"
-            value={cs.chapterCustomInput}
-            onChange={(e) => cs.onChapterCustomInputChange(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && cs.onChapterCustomCommit()}
-            onBlur={cs.onChapterCustomCommit}
-            spellCheck={false}
-            title="Matched against each line (trimmed, case-insensitive). Use ^ to anchor to line start. No capture groups needed — the whole line becomes the chapter title. Example: ^chapter\s+\d+ matches 'Chapter 4'; ^letter\s+\d+ matches 'Letter 2'."
-          />
-          <button className={styles.applyBtn} onClick={cs.onChapterCustomCommit}>Apply</button>
+        <div className={styles.tagList}>
+          {cs.chapterCustoms.map((p) => (
+            <span key={p} className={styles.tagPill}>
+              <span className={styles.tagPillText}>{p}</span>
+              <button
+                type="button"
+                className={styles.tagPillRemove}
+                onClick={() => cs.onChapterCustomRemove(p)}
+                title="Remove"
+              >×</button>
+            </span>
+          ))}
         </div>
+        <CustomPatternInput
+          placeholder="Custom regex… e.g. ^letter\s+\d+"
+          title="Matched against each line (trimmed, case-insensitive). Use ^ to anchor to line start. The matched line becomes the chapter title."
+          onAdd={cs.onChapterCustomAdd}
+        />
         <span className={styles.presetHint}>matched per line (trimmed, case-insensitive) — the matched line becomes the chapter title</span>
       </div>
 
@@ -90,19 +157,32 @@ export function StepPreview({
             <span className={styles.presetHint}>{preset.hint}</span>
           </label>
         ))}
-        <div className={styles.customRow}>
-          <input
-            className={styles.customInput}
-            placeholder="Custom regex… (press Enter or Apply)"
-            value={cs.sectionCustomInput}
-            onChange={(e) => cs.onSectionCustomInputChange(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && cs.onSectionCustomCommit()}
-            onBlur={cs.onSectionCustomCommit}
-            spellCheck={false}
-          />
-          <button className={styles.applyBtn} onClick={cs.onSectionCustomCommit}>Apply</button>
+        <div className={styles.tagList}>
+          {cs.sectionCustoms.map((p) => (
+            <span key={p} className={styles.tagPill}>
+              <span className={styles.tagPillText}>{p}</span>
+              <button
+                type="button"
+                className={styles.tagPillRemove}
+                onClick={() => cs.onSectionCustomRemove(p)}
+                title="Remove"
+              >×</button>
+            </span>
+          ))}
         </div>
+        <CustomPatternInput
+          placeholder="Custom regex… (press Enter or Add)"
+          onAdd={cs.onSectionCustomAdd}
+        />
       </div>
+
+      <TagListEditor
+        label="Exclude chunks"
+        hint="Chunks whose text matches any of these patterns (regex, case-insensitive) are dropped from the preview and final ingest."
+        items={cs.excludePatterns}
+        onAdd={cs.onExcludeAdd}
+        onRemove={cs.onExcludeRemove}
+      />
 
       <div className={styles.advancedSection}>
         <div className={styles.advancedSectionLabel}>Chunk token limits</div>
@@ -146,6 +226,28 @@ export function StepPreview({
           </label>
         </div>
       </div>
+
+      <div className={styles.advancedSection}>
+        <div className={styles.advancedSectionLabel}>Long chapters</div>
+        <label className={styles.tokenLabel}>
+          Max paragraphs / section
+          <input
+            type="number"
+            className={styles.tokenInput}
+            value={cs.maxParagraphsPerChapterSection}
+            min={0}
+            max={2000}
+            onChange={(e) =>
+              cs.onMaxParagraphsPerChapterSectionChange(Math.max(0, parseInt(e.target.value, 10) || 0))
+            }
+            onBlur={() => cs.onMaxParagraphsPerChapterSectionBlur()}
+          />
+          <span className={styles.presetHint}>
+            after merge: splits any section (including preamble) with more source paragraphs than this; same title on
+            each part (0 = off)
+          </span>
+        </label>
+      </div>
     </div>
   );
 
@@ -179,17 +281,44 @@ export function StepPreview({
 
   for (const chunk of visibleChunks) {
     if (chunk.chapterNumber !== lastChapterNumber) {
-      const label =
+      const chNum: number | null = chunk.chapterNumber;
+      const originalLabel =
         chunk.chapterTitle ??
-        (chunk.chapterNumber !== null ? `Section ${chunk.chapterNumber}` : 'Preamble');
+        (chNum !== null ? `Section ${chNum}` : 'Preamble');
+      const isOverridden = chNum !== null && chapterTitleOverrides.has(chNum);
+      const overrideTitle = chNum !== null ? chapterTitleOverrides.get(chNum) : undefined;
+      const effectiveLabel = overrideTitle ?? originalLabel;
+      const isEditing = chNum !== null && editingChapter === chNum;
       rows.push(
         <div key={`ch-${chunk.index}`} className={styles.chapterDivider}>
-          <span className={styles.chapterDividerLabel}>{label}</span>
+          {isEditing ? (
+            <input
+              className={styles.chapterDividerInput}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitEdit();
+                if (e.key === 'Escape') cancelEdit();
+              }}
+              onBlur={commitEdit}
+              autoFocus
+              size={Math.max(effectiveLabel.length, 8)}
+            />
+          ) : (
+            <span
+              className={`${styles.chapterDividerLabel}${isOverridden ? ` ${styles.chapterDividerLabelOverridden}` : ''}`}
+              onClick={() => chNum !== null && startEdit(chNum, effectiveLabel)}
+              title={chNum !== null ? 'Click to rename' : undefined}
+            >
+              {effectiveLabel}{isOverridden ? ' ✎' : ''}
+            </span>
+          )}
         </div>,
       );
-      lastChapterNumber = chunk.chapterNumber;
+      lastChapterNumber = chNum;
     }
     const isExcluded = excludedChunkIndices.has(chunk.index);
+    const isExpanded = expandedChunks.has(chunk.index);
     rows.push(
       <div
         key={chunk.index}
@@ -199,7 +328,13 @@ export function StepPreview({
           <span className={styles.chunkIdx}>#{chunk.index + 1}</span>
           <span className={styles.chunkTokens}>{chunk.tokenCount}t</span>
         </div>
-        <div className={styles.chunkRowText}>{chunk.rawText}</div>
+        <div
+          className={`${styles.chunkRowText} ${isExpanded ? styles.chunkRowTextExpanded : ''}`}
+          onClick={() => toggleExpand(chunk.index)}
+          title={isExpanded ? 'Click to collapse' : 'Click to expand'}
+        >
+          {chunk.rawText}
+        </div>
         <button
           type="button"
           className={`${styles.excludeBtn} ${isExcluded ? styles.excludeBtnActive : ''}`}
@@ -213,6 +348,34 @@ export function StepPreview({
   }
 
   const activeCount = stats.chunkCount - excludedChunkIndices.size;
+  const includedChunks = stats.chunks.filter((c) => !excludedChunkIndices.has(c.index));
+  const activeSectionCount =
+    includedChunks.length === 0 ? 0 : new Set(includedChunks.map((c) => c.chapterNumber)).size;
+  const activeEstimatedAbstractCalls = activeSectionCount > 0 ? activeSectionCount * 2 + 1 : 0;
+
+  const activeTokenTotal = includedChunks.reduce((a, c) => a + c.tokenCount, 0);
+  const activeWordCount = includedChunks.reduce((a, c) => a + c.rawText.split(/\s+/).length, 0);
+  let tokenRangeValue: string;
+  let tokenRangeUnit: string;
+  if (includedChunks.length === 0) {
+    tokenRangeValue = '—';
+    tokenRangeUnit = excludedChunkIndices.size > 0 ? `/ ${stats.tokenMin}–${stats.tokenMax}` : '';
+  } else {
+    const tcs = includedChunks.map((c) => c.tokenCount);
+    const tmin = Math.min(...tcs);
+    const tmax = Math.max(...tcs);
+    tokenRangeValue = `${tmin}–${tmax}`;
+    tokenRangeUnit =
+      excludedChunkIndices.size > 0 && (tmin !== stats.tokenMin || tmax !== stats.tokenMax)
+        ? `/ ${stats.tokenMin}–${stats.tokenMax}`
+        : '';
+  }
+
+  const hasExclusions = excludedChunkIndices.size > 0;
+  const activeTokenK = (activeTokenTotal / 1000).toFixed(1);
+  const fullTokenK = (stats.tokenTotal / 1000).toFixed(1);
+  const activeWordK = (activeWordCount / 1000).toFixed(1);
+  const fullWordK = (stats.wordCount / 1000).toFixed(1);
 
   return (
     <>
@@ -220,12 +383,37 @@ export function StepPreview({
         <>
           <div className={styles.statsGrid}>
             {[
-              { label: 'Chunks', value: activeCount.toLocaleString(), unit: excludedChunkIndices.size > 0 ? `/ ${stats.chunkCount}` : '' },
-              { label: 'Tokens', value: (stats.tokenTotal / 1000).toFixed(1), unit: 'k total' },
-              { label: 'Sections', value: String(stats.chapterCount), unit: '' },
-              { label: 'Words', value: (stats.wordCount / 1000).toFixed(1), unit: 'k' },
-              { label: 'Token range', value: `${stats.tokenMin}–${stats.tokenMax}`, unit: '' },
-              { label: 'Est. LLM calls', value: String(stats.estimatedAbstractCalls), unit: '' },
+              { label: 'Chunks', value: activeCount.toLocaleString(), unit: hasExclusions ? `/ ${stats.chunkCount}` : '' },
+              {
+                label: 'Tokens',
+                value: activeTokenK,
+                unit:
+                  hasExclusions && activeTokenTotal !== stats.tokenTotal
+                    ? `k / ${fullTokenK} k full`
+                    : 'k total',
+              },
+              {
+                label: 'Sections',
+                value: String(activeSectionCount),
+                unit:
+                  hasExclusions && activeSectionCount < stats.chapterCount
+                    ? `/ ${stats.chapterCount}`
+                    : '',
+              },
+              {
+                label: 'Words',
+                value: activeWordK,
+                unit: hasExclusions && activeWordCount !== stats.wordCount ? `k / ${fullWordK} k full` : 'k',
+              },
+              { label: 'Token range', value: tokenRangeValue, unit: tokenRangeUnit },
+              {
+                label: 'Est. LLM calls',
+                value: String(activeEstimatedAbstractCalls),
+                unit:
+                  hasExclusions && activeEstimatedAbstractCalls !== stats.estimatedAbstractCalls
+                    ? `/ ${stats.estimatedAbstractCalls}`
+                    : '',
+              },
             ].map(({ label, value, unit }) => (
               <div key={label} className={styles.statCard}>
                 <div className={styles.statLabel}>{label}</div>

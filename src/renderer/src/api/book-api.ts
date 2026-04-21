@@ -32,6 +32,7 @@ export const bookApi = {
     jobs: string[];
     chunkingOptions?: ChunkingOptions;
     excludedChunkIndices?: number[];
+    chapterTitleOverrides?: Record<number, string>;
   }): Promise<CreateBookResponse> => api.post<CreateBookResponse>('/api/books', opts),
 
   list: (): Promise<Book[]> => api.get<Book[]>('/api/books'),

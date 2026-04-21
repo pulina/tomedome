@@ -1,21 +1,25 @@
 export interface ChunkingUIState {
   chapterPresets: Set<string>;
-  chapterCustomInput: string;
-  chapterCustom: string;
+  chapterCustoms: string[];
   sectionPresets: Set<string>;
-  sectionCustomInput: string;
-  sectionCustom: string;
+  sectionCustoms: string[];
+  excludePatterns: string[];
   minTokens: number;
   maxTokens: number;
+  mergeThreshold: number;
+  maxParagraphsPerChapterSection: number;
   onToggleChapterPreset: (id: string) => void;
-  onChapterCustomInputChange: (v: string) => void;
-  onChapterCustomCommit: () => void;
+  onChapterCustomAdd: (v: string) => void;
+  onChapterCustomRemove: (v: string) => void;
   onToggleSectionPreset: (id: string) => void;
-  onSectionCustomInputChange: (v: string) => void;
-  onSectionCustomCommit: () => void;
+  onSectionCustomAdd: (v: string) => void;
+  onSectionCustomRemove: (v: string) => void;
+  onExcludeAdd: (v: string) => void;
+  onExcludeRemove: (v: string) => void;
   onMinTokensChange: (v: number) => void;
   onMaxTokensChange: (v: number) => void;
-  mergeThreshold: number;
   onMergeThresholdChange: (v: number) => void;
   onMergeThresholdBlur: () => void;
+  onMaxParagraphsPerChapterSectionChange: (v: number) => void;
+  onMaxParagraphsPerChapterSectionBlur: () => void;
 }

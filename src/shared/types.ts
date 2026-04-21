@@ -173,6 +173,9 @@ export const DEFAULT_EPUB_OPTIONS: EpubOptions = {
   ],
 };
 
+export const DEFAULT_MERGE_THRESHOLD = 300;
+export const DEFAULT_MAX_PARAGRAPHS_PER_CHAPTER_SECTION = 300;
+
 export interface ChunkingOptions {
   /** Regex strings (case-insensitive) tested per trimmed line to detect chapter boundaries.
    *  Markdown headings (##) are always detected regardless of this list.
@@ -185,8 +188,15 @@ export interface ChunkingOptions {
   minTokens?: number;
   /** Maximum token count before a paragraph is split at sentence boundaries. Default: 600. */
   maxTokens?: number;
-  /** When > 0, chunks below this token count are merged into the adjacent chunk within the same chapter. Default: 100. */
+  /** When > 0, chunks below this token count are merged into the adjacent chunk within the same chapter. Default: 300; 0 = disabled. */
   mergeThreshold?: number;
+  /**
+   * Applied after token merge: sections (including preamble) with more than this many source paragraphs are split.
+   * Omitted uses DEFAULT_MAX_PARAGRAPHS_PER_CHAPTER_SECTION (300). 0 = disabled.
+   */
+  maxParagraphsPerChapterSection?: number;
+  /** Regex strings (case-insensitive) — any chunk whose text matches any of these is dropped entirely. */
+  excludePatterns?: string[];
   /** EPUB-specific extraction options. Only used when the source file is an .epub. */
   epubOptions?: EpubOptions;
 }

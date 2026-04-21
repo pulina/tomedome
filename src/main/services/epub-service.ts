@@ -64,7 +64,7 @@ function stripAndToText(
   return root.text().replace(/\s+/g, ' ').trim();
 }
 
-function compilePatterns(patterns: string[], flags = 'i'): RegExp[] {
+function compilePatterns(patterns: string[], flags = 'iu'): RegExp[] {
   return patterns.flatMap((p) => {
     if (!safeRegex(p)) return [];
     try {
