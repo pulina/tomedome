@@ -71,8 +71,8 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
   const [sectionCustom, setSectionCustom] = useState('');
   const [minTokens, setMinTokens] = useState(3);
   const [maxTokens, setMaxTokens] = useState(600);
-  const [mergeThreshold, setMergeThreshold] = useState(0);
-  const [mergeThresholdCommitted, setMergeThresholdCommitted] = useState(0);
+  const [mergeThreshold, setMergeThreshold] = useState(100);
+  const [mergeThresholdCommitted, setMergeThresholdCommitted] = useState(100);
   const mergeThresholdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleMergeThresholdChange(v: number) {
@@ -100,6 +100,7 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
   const modalRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(modalRef);
   const skipNextDropZoneClick = useRef(false);
+
 
   const isEpub = !!filePath?.toLowerCase().endsWith('.epub');
 
@@ -313,7 +314,7 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
     (step === 'meta' && !!title.trim());
 
   return (
-    <div className={styles.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={styles.overlay}>
       <div ref={modalRef} className={styles.modal} role="dialog" aria-modal="true">
         <div className={styles.header}>
           <span className={styles.title}>{STEP_LABELS[step]}</span>
@@ -396,13 +397,14 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
 
         <div className={styles.footer}>
           {stepIndex > 0 && (
-            <button className={styles.btn} onClick={goBack}>
+            <button type="button" className={styles.btn} onClick={goBack}>
               Back
             </button>
           )}
-          <button className={styles.btn} onClick={onClose}>Cancel</button>
+          <button type="button" className={styles.btn} onClick={onClose}>Cancel</button>
           {step !== 'processing' ? (
             <button
+              type="button"
               className={`${styles.btn} ${styles.btnPrimary}`}
               disabled={!canAdvance}
               onClick={goNext}
@@ -411,6 +413,7 @@ export function IngestWizard({ onClose, onDone, initialSeriesId }: Props) {
             </button>
           ) : (
             <button
+              type="button"
               className={`${styles.btn} ${styles.btnPrimary}`}
               disabled={submitting || selectedJobs.size === 0}
               onClick={handleSubmit}

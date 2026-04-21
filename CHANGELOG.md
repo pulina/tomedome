@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-21
+
+### Changed
+
+- Chunking: default merge-small-chunks threshold is 100 tokens (was 0); small trailing chunks merge into the next chunk within the same chapter unless set to 0.
+- Ingest wizard uses the same default for the merge-threshold control.
+
+### Fixed
+
+- Ingest wizard closing on misclick or focus loss (`type="button"` on actions; backdrop no longer closes the modal).
+
 ## [0.1.1] - 2026-04-19
 
 ### Fixed
@@ -32,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stats and logs page for monitoring ingestion jobs and LLM call history
 - Cross-platform builds: macOS (arm64, x64), Windows (x64), Linux (deb, rpm)
 
-[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/pulina/tomedome/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pulina/tomedome/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pulina/tomedome/releases/tag/v0.1.0

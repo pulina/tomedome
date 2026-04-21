@@ -185,7 +185,7 @@ export interface ChunkingOptions {
   minTokens?: number;
   /** Maximum token count before a paragraph is split at sentence boundaries. Default: 600. */
   maxTokens?: number;
-  /** When > 0, chunks below this token count are merged into the adjacent chunk within the same chapter. */
+  /** When > 0, chunks below this token count are merged into the adjacent chunk within the same chapter. Default: 100. */
   mergeThreshold?: number;
   /** EPUB-specific extraction options. Only used when the source file is an .epub. */
   epubOptions?: EpubOptions;

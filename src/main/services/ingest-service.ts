@@ -34,6 +34,7 @@ export interface RawChunk {
 const MIN_TOKENS = 3;
 /** Default chunk ceiling (~2400 chars); allows long paragraphs split at sentences without targeting a fixed tokenizer window. */
 const MAX_TOKENS = 600;
+const DEFAULT_MERGE_THRESHOLD = 100;
 
 function countTokens(text: string): number {
   // ~4 chars per token for English prose — good enough without a full tokeniser
@@ -204,7 +205,7 @@ export function chunkText(text: string, options?: ChunkingOptions): RawChunk[] {
       });
     }
   }
-  const mergeThreshold = options?.mergeThreshold ?? 0;
+  const mergeThreshold = options?.mergeThreshold ?? DEFAULT_MERGE_THRESHOLD;
   return mergeThreshold > 0 ? mergeSmallChunks(chunks, mergeThreshold) : chunks;
 }
 
