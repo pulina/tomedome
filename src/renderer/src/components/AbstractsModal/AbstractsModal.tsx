@@ -18,7 +18,6 @@ export function AbstractsModal({ bookId, bookTitle, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('book');
 
-  // Detailed tab: how many chapters are currently revealed
   const [detailedVisible, setDetailedVisible] = useState(3);
   const bodyRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -32,10 +31,10 @@ export function AbstractsModal({ bookId, bookTitle, onClose }: Props) {
       .finally(() => setLoading(false));
   }, [bookId]);
 
-  // Reset detailed pager when switching to detailed tab
   useEffect(() => {
-    if (tab === 'detailed') setDetailedVisible(3);
-  }, [tab]);
+    if (tab !== 'detailed') return;
+    setDetailedVisible(3);
+  }, [tab, bookId]);
 
   const bookAbstract = abstracts.find((a) => a.level === 'book');
   const chapterShorts = abstracts
@@ -45,22 +44,44 @@ export function AbstractsModal({ bookId, bookTitle, onClose }: Props) {
     .filter((a) => a.level === 'chapter_detailed')
     .sort((a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0));
 
+  const detailedTotal = chapterDetaileds.length;
+
+  useEffect(() => {
+    if (tab !== 'detailed' || loading || detailedTotal === 0) return;
+    let cancelled = false;
+    const id = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const body = bodyRef.current;
+      if (!body) return;
+      setDetailedVisible((v) => {
+        if (v >= detailedTotal) return v;
+        if (body.scrollHeight <= body.clientHeight + 8) {
+          return Math.min(v + 3, detailedTotal);
+        }
+        return v;
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
+  }, [tab, detailedVisible, detailedTotal, loading]);
+
   const visibleDetaileds = chapterDetaileds.slice(0, detailedVisible);
   const hasMore = detailedVisible < chapterDetaileds.length;
 
-  // Auto-load when scrolled near the bottom of the body container.
   useEffect(() => {
     const body = bodyRef.current;
-    if (!body) return;
+    if (!body || tab !== 'detailed') return;
     function onScroll() {
       if (!body) return;
       if (body.scrollHeight - body.scrollTop - body.clientHeight < 120) {
-        setDetailedVisible((v) => v + 3);
+        setDetailedVisible((v) => Math.min(v + 3, detailedTotal));
       }
     }
     body.addEventListener('scroll', onScroll);
     return () => body.removeEventListener('scroll', onScroll);
-  }, [tab]);
+  }, [tab, detailedTotal]);
 
   return (
     <div className={styles.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>

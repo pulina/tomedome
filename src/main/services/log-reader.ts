@@ -29,8 +29,7 @@ function numericToLevel(n: number): LogLevel {
 
 /**
  * Reads the tail of the log file, parses JSON lines, returns newest-first.
- * For Epic 1.2 we read up to 512 KB from the end — plenty for hundreds of
- * entries without any paging machinery. If the log file doesn't exist yet,
+ * If the log file doesn't exist yet,
  * returns an empty array.
  */
 export async function readAppLog(opts: {

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-22
+
+### Added
+
+- `docs/model-selection-best-settings.md`: guidance on chat/embedding/reranker choice, chunking defaults, and how ingest/abstracts use chunks; linked from README.
+
+### Changed
+
+- Abstracts modal: flex/`min-height` so the detailed tab scroll area lays out correctly; reset detailed pager when the book changes; auto-reveal more detailed items when the body is shorter than the viewport; cap “load more” at the total chapter count.
+
 ## [0.1.3] - 2026-04-21
 
 ### Added
@@ -54,7 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stats and logs page for monitoring ingestion jobs and LLM call history
 - Cross-platform builds: macOS (arm64, x64), Windows (x64), Linux (deb, rpm)
 
-[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/pulina/tomedome/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/pulina/tomedome/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/pulina/tomedome/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pulina/tomedome/compare/v0.1.0...v0.1.1

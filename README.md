@@ -154,6 +154,9 @@ headers — expect that to take a minute on a clean install.
 [pl_book.md](book_example/pl_book.md),
 [the_incident_report_plan.md](book_example/the_incident_report_plan.md).
 
+Model/chunking selection guidance:
+- [`docs/model-selection-best-settings.md`](docs/model-selection-best-settings.md)
+
 ### First push (new remote)
 
 After your initial commit:

@@ -21,7 +21,7 @@ export const AVAILABLE_JOBS = [
   {
     type: 'embedding_generation',
     name: 'Generate embeddings',
-    desc: 'Embed all chunks into a vector store — required for semantic search (Epic 1.5)',
+    desc: 'Embed all chunks into a vector store — required for semantic search',
     disabled: false,
   },
 ] as const;
