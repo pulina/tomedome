@@ -80,6 +80,8 @@ export const schemas = {
     required: ['type'],
     properties: {
       type: { type: 'string', enum: ['abstract_generation', 'embedding_generation'] },
+      /** When `type` is `embedding_generation`, run full abstract LLM regeneration after chunk embed (skips standalone abstract-vector pass in between). */
+      chainAbstractGeneration: { type: 'boolean' },
     },
   },
   bookEmbeddingSearchBody: {
@@ -136,6 +138,8 @@ export const schemas = {
       apiKey: { type: 'string' },
       model: { type: 'string', minLength: 1 },
       embeddingModel: { type: 'string' },
+      embeddingQueryPrefix: { type: 'string' },
+      embeddingPassagePrefix: { type: 'string' },
       ollamaBaseUrl: { type: 'string' },
       lmStudioBaseUrl: { type: 'string' },
     },

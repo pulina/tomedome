@@ -54,21 +54,57 @@
   color: var(--color-text-primary);
 }
 
-/* ── Model info bar ── */
-.modelInfo {
-  padding: 6px 18px;
+/* ── Embeddings meta (model + prefixes) ── */
+.inspectorMeta {
+  padding: 6px 18px 8px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 2px;
   flex-shrink: 0;
 }
 
-.modelRow {
+.metaLine {
+  min-width: 0;
+  width: 100%;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  line-height: 1.3;
   display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 5px;
+}
+
+.metaKeyStrong {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.metaStem {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.metaSectionDivider {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  opacity: 0.4;
+  padding: 0 5px;
+}
+
+.metaActions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
+  margin-top: 4px;
 }
 
 .modelLabel {
@@ -88,12 +124,16 @@
 .modelValueWarn {
   font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 400;
   color: #c8a020;
 }
 
 .modelSep {
-  color: var(--color-text-muted);
+  font-family: var(--font-mono);
   font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  opacity: 0.55;
 }
 
 .modelMismatch {

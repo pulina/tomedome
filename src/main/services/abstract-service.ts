@@ -7,7 +7,7 @@ import {
   saveAbstract,
   type ChunkRow,
 } from './book-service';
-import { runAbstractEmbeddingGeneration } from './embedding-service';
+import { abstractEmbeddingProfileBlockedReason, runAbstractEmbeddingGeneration } from './embedding-service';
 import { setJobStarted, updateProgress } from './job-queue';
 import { generateStructured } from './llm-client';
 import { getAbstractConfig, getLlmConfig } from './config-service';
@@ -157,9 +157,13 @@ export async function runAbstractGeneration(
   jobId: string,
   bookId: string,
   signal: AbortSignal,
+  opts?: { skipFinalAbstractEmbedding?: boolean },
 ): Promise<void> {
   const chunks = getChunks(bookId);
   if (chunks.length === 0) return;
+
+  const blocked = abstractEmbeddingProfileBlockedReason(bookId);
+  if (blocked) throw new Error(blocked);
 
   const { model } = getLlmConfig();
   const abstractCfg = getAbstractConfig();
@@ -251,7 +255,7 @@ export async function runAbstractGeneration(
 
   if (!signal.aborted && savedCount.value > 0) {
     markBookAbstracted(bookId);
-    await runAbstractEmbeddingGeneration(bookId, signal);
+    if (!opts?.skipFinalAbstractEmbedding) await runAbstractEmbeddingGeneration(bookId, signal);
   }
 }
 

@@ -16,6 +16,8 @@ export interface JobRow {
   error: string | null;
   model: string | null;
   started_at: string | null;
+  chain_abstract_generation?: number;
+  ingest_abstract_then_embed?: number;
   created_at: string;
   updated_at: string;
 }
@@ -70,6 +72,8 @@ function rowToJob(row: JobRow, bookTitle: string): Job {
     type: row.type as JobType,
     bookId: row.book_id ?? '',
     bookTitle,
+    ...(row.chain_abstract_generation === 1 ? { chainAbstractGeneration: true as const } : {}),
+    ...(row.ingest_abstract_then_embed === 1 ? { ingestAbstractThenEmbed: true as const } : {}),
     status: row.status as JobStatus,
     progressCurrent: row.progress_current,
     progressTotal: row.progress_total,
@@ -90,19 +94,60 @@ function getBookTitle(bookId: string | null): string {
   return row?.title ?? 'Unknown';
 }
 
-export function createJob(type: JobType, bookId: string): Job {
-  const id = randomUUID();
+/**
+ * At most one pending or running abstract/embedding job per book (avoids concurrent DB writers).
+ * Uses BEGIN IMMEDIATE so two concurrent HTTP handlers cannot both pass the existence check.
+ */
+export interface CreateBookBackgroundJobOpts {
+  /** Only for `embedding_generation`: after chunk embed, clear and regenerate abstract text + abstract embeddings. */
+  chainAbstractGeneration?: boolean;
+  /** Ingest with both abstract + embed: one job runs abstract LLM then chunk + abstract vectors (UI label). */
+  ingestAbstractThenEmbed?: boolean;
+}
+
+export function createBookBackgroundJobIfIdle(
+  type: JobType,
+  bookId: string,
+  opts?: CreateBookBackgroundJobOpts,
+): Job | null {
+  const db = getDb();
   const now = new Date().toISOString();
-  getDb()
-    .prepare(
-      `INSERT INTO jobs (id, type, book_id, status, progress_current, progress_total, progress_label, created_at, updated_at)
-       VALUES (?, ?, ?, 'pending', 0, 0, '', ?, ?)`,
-    )
-    .run(id, type, bookId, now, now);
-  return rowToJob(
-    getDb().prepare('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow,
-    getBookTitle(bookId),
-  );
+  const chain =
+    type === 'embedding_generation' && opts?.chainAbstractGeneration === true ? 1 : 0;
+  const ingestAbstractThenEmbed =
+    type === 'abstract_generation' && opts?.ingestAbstractThenEmbed === true ? 1 : 0;
+  let createdRow: JobRow | undefined;
+
+  db.prepare('BEGIN IMMEDIATE').run();
+  try {
+    const existing = db
+      .prepare(
+        `SELECT 1 AS x FROM jobs WHERE book_id = ?
+         AND type IN ('abstract_generation', 'embedding_generation')
+         AND status IN ('pending', 'running')
+         LIMIT 1`,
+      )
+      .get(bookId) as { x: number } | undefined;
+    if (!existing) {
+      const id = randomUUID();
+      db.prepare(
+        `INSERT INTO jobs (id, type, book_id, status, progress_current, progress_total, progress_label, created_at, updated_at, chain_abstract_generation, ingest_abstract_then_embed)
+         VALUES (?, ?, ?, 'pending', 0, 0, '', ?, ?, ?, ?)`,
+      ).run(id, type, bookId, now, now, chain, ingestAbstractThenEmbed);
+      createdRow = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow;
+    }
+    db.prepare('COMMIT').run();
+  } catch (err) {
+    try {
+      db.prepare('ROLLBACK').run();
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+
+  if (!createdRow) return null;
+  return rowToJob(createdRow, getBookTitle(bookId));
 }
 
 export function updateProgress(

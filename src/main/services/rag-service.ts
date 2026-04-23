@@ -1,5 +1,13 @@
 import { getAdapter } from '../llm';
-import { getApiKeyPlaintext, getEmbeddingModel, getLlmConfig, getRerankerConfig } from './config-service';
+import {
+  getApiKeyPlaintext,
+  getEmbeddingModel,
+  getEmbeddingPassagePrefix,
+  getEmbeddingQueryPrefix,
+  getLlmConfig,
+  getRerankerConfig,
+} from './config-service';
+import { withEmbeddingQueryPrefix } from '@shared/embedding-profile';
 import { finaliseLlmCall, insertLlmCall } from './llm-call-log';
 import { getChapterShortAbstracts, type ChapterShortAbstract } from './book-service';
 import { searchAllForRag, searchChunksFts, searchAbstractsForRag } from './vector-store';
@@ -151,6 +159,8 @@ export async function buildRagContext(userQuery: string, seriesId: string | null
   try {
     const cfg = getLlmConfig();
     const embeddingModel = getEmbeddingModel();
+    const queryPrefix = getEmbeddingQueryPrefix();
+    const passagePrefix = getEmbeddingPassagePrefix();
     const adapter = getAdapter(cfg, getApiKeyPlaintext());
 
     let semanticHits: RagResult[] = [];
@@ -158,13 +168,21 @@ export async function buildRagContext(userQuery: string, seriesId: string | null
 
     if (adapter.embed && embeddingModel) {
       try {
-        const vectors = await adapter.embed([userQuery], embeddingModel);
+        const vectors = await adapter.embed(
+          [withEmbeddingQueryPrefix(userQuery.trim(), queryPrefix)],
+          embeddingModel,
+        );
         const queryVector = vectors[0];
         if (queryVector) {
-          semanticHits = searchAllForRag(queryVector, SEMANTIC_TOP_N, embeddingModel, seriesId);
-          abstractHits = searchAbstractsForRag(queryVector, ABSTRACT_TOP_N, [
-            'chapter_detailed',
-          ], embeddingModel, seriesId);
+          semanticHits = searchAllForRag(queryVector, SEMANTIC_TOP_N, embeddingModel, seriesId, passagePrefix);
+          abstractHits = searchAbstractsForRag(
+            queryVector,
+            ABSTRACT_TOP_N,
+            ['chapter_detailed'],
+            embeddingModel,
+            seriesId,
+            passagePrefix,
+          );
         }
       } catch (err) {
         log.warn({ err }, 'rag-service: embedding failed, falling back to FTS only');

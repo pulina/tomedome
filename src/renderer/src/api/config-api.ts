@@ -6,6 +6,8 @@ export interface SaveLlmPayload {
   apiKey?: string;
   model: string;
   embeddingModel?: string;
+  embeddingQueryPrefix?: string;
+  embeddingPassagePrefix?: string;
   ollamaBaseUrl?: string;
   lmStudioBaseUrl?: string;
 }

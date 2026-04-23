@@ -68,6 +68,8 @@ interface FormState {
   apiKey: string;
   model: string;
   embeddingModel: string;
+  embeddingQueryPrefix: string;
+  embeddingPassagePrefix: string;
   ollamaBaseUrl: string;
   lmStudioBaseUrl: string;
 }
@@ -79,6 +81,8 @@ function initialFormFromConfig(cfg: LlmConfig | null): FormState {
       apiKey: '',
       model: '',
       embeddingModel: '',
+      embeddingQueryPrefix: '',
+      embeddingPassagePrefix: '',
       ollamaBaseUrl: DEFAULT_OLLAMA_URL,
       lmStudioBaseUrl: DEFAULT_LMSTUDIO_URL,
     };
@@ -88,6 +92,8 @@ function initialFormFromConfig(cfg: LlmConfig | null): FormState {
     apiKey: '',
     model: cfg.model,
     embeddingModel: cfg.embeddingModel || '',
+    embeddingQueryPrefix: cfg.embeddingQueryPrefix ?? '',
+    embeddingPassagePrefix: cfg.embeddingPassagePrefix ?? '',
     ollamaBaseUrl: cfg.ollamaBaseUrl || DEFAULT_OLLAMA_URL,
     lmStudioBaseUrl: cfg.lmStudioBaseUrl || DEFAULT_LMSTUDIO_URL,
   };
@@ -106,6 +112,8 @@ export function SettingsPage() {
     apiKey: '',
     model: '',
     embeddingModel: '',
+    embeddingQueryPrefix: '',
+    embeddingPassagePrefix: '',
     ollamaBaseUrl: DEFAULT_OLLAMA_URL,
     lmStudioBaseUrl: DEFAULT_LMSTUDIO_URL,
   });
@@ -400,6 +408,8 @@ export function SettingsPage() {
         provider: form.provider,
         model: form.model,
         embeddingModel: form.embeddingModel.trim() || undefined,
+        embeddingQueryPrefix: form.embeddingQueryPrefix,
+        embeddingPassagePrefix: form.embeddingPassagePrefix,
         apiKey: form.apiKey.length > 0 ? form.apiKey : undefined,
         ollamaBaseUrl: form.provider === LlmProvider.Ollama ? form.ollamaBaseUrl : undefined,
         lmStudioBaseUrl: form.provider === LlmProvider.LmStudio ? form.lmStudioBaseUrl : undefined,
@@ -809,6 +819,75 @@ export function SettingsPage() {
               <div className={styles.helper}>
                 Must be an embedding model, not a chat model. Used for semantic search.
               </div>
+
+              <details className={styles.embeddingAdvancedDetails}>
+                <summary className={styles.embeddingAdvancedSummary}>
+                  <span className={styles.embeddingAdvancedChevron} aria-hidden>
+                    <svg
+                      className={styles.embeddingAdvancedChevronSvg}
+                      viewBox="0 0 24 24"
+                      width={20}
+                      height={20}
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden
+                    >
+                      <path
+                        d="M10 7l5 5-5 5"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span className={styles.embeddingAdvancedSummaryLabel}>
+                    Advanced — asymmetric embedding instruct prefixes
+                  </span>
+                </summary>
+                <div className={styles.embeddingAdvancedBody}>
+                  <div className={styles.helper}>
+                    Prefixes are for asymmetric (query vs. passage) instruct models only — e.g. intfloat{' '}
+                    <strong>E5</strong> (<code>e5-large</code>, <code>multilingual-e5-large</code>),{' '}
+                    <strong>BGE</strong> instruct lines (<code>bge-m3</code>, <code>bge-large-en-v1.5</code> with retrieval instructions),{' '}
+                    <strong>Qwen3-Embedding</strong>. Leave both empty for symmetric models (e.g. OpenAI{' '}
+                    <code>text-embedding-3-small</code>/<code>large</code>, <code>nomic-embed-text</code> without instruct templates).{' '}
+                    <strong>Non-empty prefixes on symmetric models usually hurt retrieval quality.</strong>
+                  </div>
+
+                  <label className={styles.label} htmlFor="embeddingQueryPrefix">
+                    Embedding query prefix
+                  </label>
+                  <input
+                    id="embeddingQueryPrefix"
+                    className={styles.input}
+                    type="text"
+                    value={form.embeddingQueryPrefix}
+                    onChange={(e) => setForm((f) => ({ ...f, embeddingQueryPrefix: e.target.value }))}
+                    title="Only for asymmetric instruct embeddings. Prepended to user queries (RAG + inspector). Empty for symmetric models — arbitrary prefixes tend to worsen scores."
+                    placeholder="e.g. query: "
+                  />
+                  <div className={styles.helper}>
+                    Query-side template (e.g. <code>query: </code> for E5). Does not require re-embedding stored chunks; leave empty unless the model card specifies it.
+                  </div>
+
+                  <label className={styles.label} htmlFor="embeddingPassagePrefix">
+                    Embedding passage prefix
+                  </label>
+                  <input
+                    id="embeddingPassagePrefix"
+                    className={styles.input}
+                    type="text"
+                    value={form.embeddingPassagePrefix}
+                    onChange={(e) => setForm((f) => ({ ...f, embeddingPassagePrefix: e.target.value }))}
+                    title="Only for asymmetric instruct embeddings. Prepended to chunk/abstract text before embedding. Empty for symmetric models — arbitrary prefixes tend to worsen scores. Changing requires re-embedding volumes."
+                    placeholder="e.g. passage: "
+                  />
+                  <div className={styles.helper}>
+                    Passage-side template (e.g. <code>passage: </code> for E5). After any change, re-run embedding on each volume — stored vectors were built with the previous prefix.
+                  </div>
+                </div>
+              </details>
             </div>
           )}
 

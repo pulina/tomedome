@@ -429,3 +429,65 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.embeddingAdvancedDetails {
+  margin-top: 6px;
+}
+
+.embeddingAdvancedSummary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
+  cursor: pointer;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border-color);
+  user-select: none;
+}
+
+.embeddingAdvancedSummaryLabel {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  min-width: 0;
+}
+
+.embeddingAdvancedSummary::-webkit-details-marker {
+  display: none;
+}
+
+.embeddingAdvancedChevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0;
+  padding: 0 10px 0 2px;
+  color: var(--color-text-muted);
+  transform: rotate(0deg);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.embeddingAdvancedChevronSvg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.embeddingAdvancedDetails[open] .embeddingAdvancedChevron {
+  transform: rotate(90deg);
+}
+
+.embeddingAdvancedSummary:hover .embeddingAdvancedChevron {
+  color: var(--color-text-secondary);
+}
+
+.embeddingAdvancedBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}

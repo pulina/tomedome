@@ -166,11 +166,25 @@ export function getDb(): Database.Database {
   try { db.exec(`ALTER TABLE abstracts ADD COLUMN chapter_title TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE jobs ADD COLUMN model TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE jobs ADD COLUMN started_at TEXT`); } catch { /* already exists */ }
+  try {
+    db.exec(`ALTER TABLE jobs ADD COLUMN chain_abstract_generation INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    /* already exists */
+  }
+  try {
+    db.exec(`ALTER TABLE jobs ADD COLUMN ingest_abstract_then_embed INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    /* already exists */
+  }
   try { db.exec(`ALTER TABLE series ADD COLUMN abstract TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE series ADD COLUMN abstracted_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE chat_messages ADD COLUMN chunks_referenced TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE books ADD COLUMN embedding_model TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE books ADD COLUMN embedding_model_override INTEGER NOT NULL DEFAULT 0`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE books ADD COLUMN embedding_query_prefix_snapshot TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE books ADD COLUMN embedding_passage_prefix_snapshot TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE books ADD COLUMN embedding_override_lock_model TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE books ADD COLUMN embedding_override_lock_passage_prefix TEXT`); } catch { /* already exists */ }
   // Backfill FTS index for any chunks inserted before the virtual table existed.
   try { db.exec(`INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')`); } catch { /* non-critical */ }
 

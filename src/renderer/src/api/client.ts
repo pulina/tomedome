@@ -24,7 +24,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) {
     const text = await res.text();
     const detail = messageFromErrorResponseBody(text);
-    throw new ApiError(res.status, `HTTP ${res.status}: ${detail}`, text);
+    throw new ApiError(res.status, detail || `Something went wrong (${res.status}).`, text);
   }
   if (res.status === 204) return undefined;
   return (await res.json()) as T;

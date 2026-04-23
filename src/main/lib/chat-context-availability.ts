@@ -1,23 +1,18 @@
 import type { Book, ChatContextAvailability } from '../../shared/types';
+import { bookEmbeddingProfileMismatch } from '@shared/embedding-profile';
 import { listBooks } from '../services/book-service';
-import { getEmbeddingModel } from '../services/config-service';
+import { getEmbeddingModel, getEmbeddingPassagePrefix } from '../services/config-service';
 import { listSeries } from '../services/series-service';
 
-function hasMismatch(book: Book, currentEmbeddingModel: string | null): boolean {
-  return (
-    book.chunkCount > 0 &&
-    !!book.embeddedAt &&
-    !!book.embeddingModel &&
-    !!currentEmbeddingModel &&
-    book.embeddingModel !== currentEmbeddingModel &&
-    !book.embeddingModelOverride
-  );
+function hasMismatch(book: Book, currentEmbeddingModel: string | null, currentPassagePrefix: string): boolean {
+  return bookEmbeddingProfileMismatch(book, currentEmbeddingModel, currentPassagePrefix);
 }
 
 export function getChatContextAvailability(seriesId?: string | null): ChatContextAvailability {
   const allBooks = listBooks();
   const seriesList = listSeries();
   const currentEmbeddingModel = getEmbeddingModel() || null;
+  const currentPassagePrefix = getEmbeddingPassagePrefix();
 
   if (seriesId) {
     const series = seriesList.find((s) => s.id === seriesId);
@@ -30,7 +25,7 @@ export function getChatContextAvailability(seriesId?: string | null): ChatContex
         bookAbstractMissingCount: 0,
         ragEligibleBookCount: 0,
         ragEmbeddingMissingCount: 0,
-        ragModelMismatchCount: 0,
+        ragProfileMismatchCount: 0,
         seriesScoped: true,
       };
     }
@@ -44,7 +39,7 @@ export function getChatContextAvailability(seriesId?: string | null): ChatContex
       bookAbstractMissingCount: books.filter((b) => !b.abstractedAt).length,
       ragEligibleBookCount,
       ragEmbeddingMissingCount: books.filter((b) => b.chunkCount > 0 && !b.embeddedAt).length,
-      ragModelMismatchCount: books.filter((b) => hasMismatch(b, currentEmbeddingModel)).length,
+      ragProfileMismatchCount: books.filter((b) => hasMismatch(b, currentEmbeddingModel, currentPassagePrefix)).length,
       seriesScoped: true,
     };
   }
@@ -63,7 +58,7 @@ export function getChatContextAvailability(seriesId?: string | null): ChatContex
     bookAbstractMissingCount: allBooks.filter((b) => !b.abstractedAt).length,
     ragEligibleBookCount,
     ragEmbeddingMissingCount: allBooks.filter((b) => b.chunkCount > 0 && !b.embeddedAt).length,
-    ragModelMismatchCount: allBooks.filter((b) => hasMismatch(b, currentEmbeddingModel)).length,
+    ragProfileMismatchCount: allBooks.filter((b) => hasMismatch(b, currentEmbeddingModel, currentPassagePrefix)).length,
     seriesScoped: false,
   };
 }

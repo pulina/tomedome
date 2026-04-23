@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from './database';
 import type { Abstract, Book } from '../../shared/types';
 import type { RawChunk } from './ingest-service';
+import { getEmbeddingModel, getEmbeddingPassagePrefix } from './config-service';
 
 interface BookRow {
   id: string;
@@ -20,6 +21,10 @@ interface BookRow {
   embedded_at: string | null;
   embedding_model: string | null;
   embedding_model_override: number;
+  embedding_override_lock_model: string | null;
+  embedding_override_lock_passage_prefix: string | null;
+  embedding_query_prefix_snapshot: string | null;
+  embedding_passage_prefix_snapshot: string | null;
   created_at: string;
 }
 
@@ -47,6 +52,12 @@ function rowToBook(row: BookRow): Book {
     embeddedAt: row.embedded_at ?? undefined,
     embeddingModel: row.embedding_model ?? undefined,
     embeddingModelOverride: row.embedding_model_override === 1,
+    embeddingOverrideLockModel: row.embedding_override_lock_model ?? undefined,
+    embeddingOverrideLockPassagePrefix: row.embedding_override_lock_passage_prefix ?? undefined,
+    embeddingQueryPrefixSnapshot:
+      row.embedding_query_prefix_snapshot != null ? row.embedding_query_prefix_snapshot : '',
+    embeddingPassagePrefixSnapshot:
+      row.embedding_passage_prefix_snapshot != null ? row.embedding_passage_prefix_snapshot : '',
     createdAt: row.created_at,
   };
 }
@@ -133,9 +144,21 @@ export function listBooks(): Book[] {
            LIMIT 1`,
         )
         .get(book.id) as { model: string } | undefined;
-      if (row?.model) {
-        db.prepare(`UPDATE books SET embedding_model = ? WHERE id = ?`).run(row.model, book.id);
-        book.embeddingModel = row.model;
+      const absRow =
+        row?.model == null
+          ? (db
+              .prepare(
+                `SELECT ae.model FROM abstract_embeddings ae
+                 JOIN abstracts a ON a.id = ae.abstract_id
+                 WHERE a.book_id = ?
+                 LIMIT 1`,
+              )
+              .get(book.id) as { model: string } | undefined)
+          : undefined;
+      const model = row?.model ?? absRow?.model;
+      if (model) {
+        db.prepare(`UPDATE books SET embedding_model = ? WHERE id = ?`).run(model, book.id);
+        book.embeddingModel = model;
       }
     }
   }
@@ -200,15 +223,75 @@ export function markBookAbstracted(bookId: string): void {
 }
 
 export function setBookEmbeddingOverride(bookId: string, override: boolean): void {
-  getDb()
-    .prepare(`UPDATE books SET embedding_model_override = ? WHERE id = ?`)
-    .run(override ? 1 : 0, bookId);
+  const db = getDb();
+  if (override) {
+    const lockModel = getEmbeddingModel().trim();
+    const lockPassage = getEmbeddingPassagePrefix();
+    db.prepare(
+      `UPDATE books SET embedding_model_override = 1,
+         embedding_override_lock_model = ?,
+         embedding_override_lock_passage_prefix = ?
+       WHERE id = ?`,
+    ).run(lockModel, lockPassage, bookId);
+  } else {
+    db.prepare(
+      `UPDATE books SET embedding_model_override = 0,
+         embedding_override_lock_model = NULL,
+         embedding_override_lock_passage_prefix = NULL
+       WHERE id = ?`,
+    ).run(bookId);
+  }
 }
 
-export function markBookEmbedded(bookId: string, model: string): void {
+export function markBookEmbedded(
+  bookId: string,
+  model: string,
+  passagePrefixSnapshot: string,
+  queryPrefixSnapshot: string,
+): void {
   getDb()
-    .prepare(`UPDATE books SET embedded_at = ?, embedding_model = ? WHERE id = ?`)
-    .run(new Date().toISOString(), model, bookId);
+    .prepare(
+      `UPDATE books SET embedded_at = ?, embedding_model = ?, embedding_passage_prefix_snapshot = ?, embedding_query_prefix_snapshot = ?,
+         embedding_model_override = 0, embedding_override_lock_model = NULL, embedding_override_lock_passage_prefix = NULL
+       WHERE id = ?`,
+    )
+    .run(new Date().toISOString(), model, passagePrefixSnapshot, queryPrefixSnapshot, bookId);
+}
+
+export function bookHasChunkEmbeddings(bookId: string): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT 1 AS ok FROM chunk_embeddings ce
+       INNER JOIN chunks c ON c.id = ce.chunk_id
+       WHERE c.book_id = ?
+       LIMIT 1`,
+    )
+    .get(bookId) as { ok: number } | undefined;
+  return !!row;
+}
+
+/**
+ * Abstract RAG filters use `books.embedding_*_prefix_snapshot`. Chunk embed sets those via
+ * `markBookEmbedded`. If the book has no chunk vectors yet, abstract-only embed must still
+ * refresh snapshots or semantic abstract search excludes the book. When chunk vectors exist,
+ * snapshots stay owned by the chunk job — changing passage prefix then re-embedding only abstracts
+ * still requires a chunk re-embed to stay consistent.
+ */
+export function syncBookEmbeddingSnapshotAfterAbstractJob(
+  bookId: string,
+  model: string,
+  passagePrefixSnapshot: string,
+  queryPrefixSnapshot: string,
+): void {
+  if (bookHasChunkEmbeddings(bookId)) return;
+  getDb()
+    .prepare(
+      `UPDATE books SET embedding_model = ?,
+         embedding_passage_prefix_snapshot = ?,
+         embedding_query_prefix_snapshot = ?
+       WHERE id = ?`,
+    )
+    .run(model, passagePrefixSnapshot, queryPrefixSnapshot, bookId);
 }
 
 export function clearAbstracts(bookId: string): void {

@@ -78,6 +78,7 @@ Evidence status:
 
 References:
 
+- [Rethinking Chunk Size for Long-Document Retrieval](https://arxiv.org/abs/2505.21700)
 - [Document chunking: precision vs context trade-off](https://mbrenndoerfer.com/writing/document-chunking-rag-strategies-retrieval)
 - [Chunking strategy guide (practical defaults)](https://machinelearningplus.com/gen-ai/optimizing-rag-chunk-size-your-definitive-guide-to-better-retrieval-accuracy/)
 - [Context budgeting guideline (leave headroom)](https://fieldguidetoai.com/guides/context-management)
@@ -115,6 +116,7 @@ You can adjust this per import via `chunkingOptions`, and also manually:
 
 Chunking recommendation references used here:
 
+- [Is Semantic Chunking Worth the Computational Cost?](https://arxiv.org/abs/2410.13070)
 - [Document chunking: precision vs context trade-off](https://mbrenndoerfer.com/writing/document-chunking-rag-strategies-retrieval)
 - [Chunking strategy guide (practical defaults)](https://machinelearningplus.com/gen-ai/optimizing-rag-chunk-size-your-definitive-guide-to-better-retrieval-accuracy/)
 

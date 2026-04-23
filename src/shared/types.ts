@@ -13,6 +13,10 @@ export interface LlmConfig {
   keysSet: Partial<Record<LlmProvider, boolean>>;
   model: string;
   embeddingModel: string;
+  /** Prepended to user queries before embedding (RAG + inspector). Does not affect stored vectors — change anytime. */
+  embeddingQueryPrefix: string;
+  /** Prepended to chunk/abstract text before embedding. Changing requires re-embedding volumes. */
+  embeddingPassagePrefix: string;
   ollamaBaseUrl: string;
   lmStudioBaseUrl: string;
 }
@@ -55,8 +59,8 @@ export interface ChatContextAvailability {
   /** Books with chunkCount > 0 — RAG can apply once embedded. */
   ragEligibleBookCount: number;
   ragEmbeddingMissingCount: number;
-  /** Books with embeddings from a different model than the current one (no override). */
-  ragModelMismatchCount: number;
+  /** Volumes with chunk embeddings whose stored model/passage-prefix profile does not match current settings (excludes active per-book RAG override). */
+  ragProfileMismatchCount: number;
   /** True when counts are limited to a single series (sidebar selection). */
   seriesScoped?: boolean;
 }
@@ -230,6 +234,14 @@ export interface Book {
   embeddedAt?: string;
   embeddingModel?: string;
   embeddingModelOverride?: boolean;
+  /** Embedding model from settings when override was granted; must match current to keep override. */
+  embeddingOverrideLockModel?: string;
+  /** Passage prefix from settings when override was granted; must match current (normalized) to keep override. */
+  embeddingOverrideLockPassagePrefix?: string;
+  /** Query instruct prefix recorded at last chunk embedding (informational; search uses current settings). */
+  embeddingQueryPrefixSnapshot?: string;
+  /** Passage instruct prefix from settings at last chunk embedding completion. */
+  embeddingPassagePrefixSnapshot?: string;
   createdAt: string;
 }
 
@@ -282,6 +294,10 @@ export interface Job {
   type: JobType;
   bookId: string;
   bookTitle: string;
+  /** When type is `embedding_generation`, job also runs full abstract regeneration after chunks. */
+  chainAbstractGeneration?: boolean;
+  /** Ingest selected both jobs: abstract LLM then chunk + vector passes in one queued job. */
+  ingestAbstractThenEmbed?: boolean;
   status: JobStatus;
   progressCurrent: number;
   progressTotal: number;

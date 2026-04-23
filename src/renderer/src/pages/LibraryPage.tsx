@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { ApiError } from '../api/api-error';
 import { bookApi } from '../api/book-api';
 import { configApi } from '../api/config-api';
 import { jobApi } from '../api/job-api';
@@ -10,13 +12,20 @@ import { ExportModal } from '../components/ExportModal/ExportModal';
 import { ImportWizard } from '../components/ImportWizard/ImportWizard';
 import { useSelectedSeries } from '../hooks/useSelectedSeries';
 import type { Book, ImportResult, Series } from '../../../shared/types';
+import {
+  bookEmbeddingProfileMismatch,
+  bookStoredEmbeddingProfileDiffers,
+  embeddingOverrideActive,
+  normalizeEmbeddingPrefix,
+} from '@shared/embedding-profile';
 import styles from './LibraryPage.module.css';
 
-function bookHasRag(book: Book, currentEmbeddingModel: string | null): boolean {
+/** RAG needs a configured embedding model; without it we treat retrieval as off even if rows still list vectors. */
+function bookHasRag(book: Book, currentEmbeddingModel: string | null, currentPassagePrefix: string): boolean {
   if (!book.embeddedAt || book.chunkCount === 0) return false;
-  if (!book.embeddingModel || !currentEmbeddingModel) return true;
-  if (book.embeddingModel === currentEmbeddingModel) return true;
-  return book.embeddingModelOverride === true;
+  if (embeddingOverrideActive(book, currentEmbeddingModel, currentPassagePrefix)) return true;
+  if (!(currentEmbeddingModel ?? '').trim()) return false;
+  return !bookStoredEmbeddingProfileDiffers(book, currentEmbeddingModel, currentPassagePrefix);
 }
 
 export function LibraryPage() {
@@ -36,22 +45,43 @@ export function LibraryPage() {
   const [importWizardOpen, setImportWizardOpen] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [currentEmbeddingModel, setCurrentEmbeddingModel] = useState<string | null>(null);
+  const [currentEmbeddingPassagePrefix, setCurrentEmbeddingPassagePrefix] = useState('');
 
   const { selectedSeriesId, refresh: refreshSeries } = useSelectedSeries();
   const sseCloseRef = useRef<(() => void) | null>(null);
+  const location = useLocation();
 
-  async function load() {
-    const [list, series] = await Promise.all([bookApi.list(), seriesApi.list()]);
+  const load = useCallback(async () => {
+    const [list, series, cfg] = await Promise.all([
+      bookApi.list(),
+      seriesApi.list(),
+      configApi.getLlmConfig().catch((): null => null),
+    ]);
     setBooks(list);
     setSeriesList(series);
-  }
+    if (cfg) {
+      const em = (cfg.embeddingModel ?? '').trim();
+      setCurrentEmbeddingModel(em.length > 0 ? em : null);
+      setCurrentEmbeddingPassagePrefix(cfg.embeddingPassagePrefix ?? '');
+    }
+  }, []);
 
   useEffect(() => {
-    void load();
-    configApi.getLlmConfig().then((cfg) => {
-      setCurrentEmbeddingModel(cfg.embeddingModel || null);
-    }).catch(() => {});
+    if (location.pathname === '/library') {
+      void load();
+    }
+  }, [location.pathname, load]);
 
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible' || location.pathname !== '/library') return;
+      void load();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [load, location.pathname]);
+
+  useEffect(() => {
     let cancelled = false;
     jobApi.openStream((job) => {
       if (
@@ -71,8 +101,7 @@ export function LibraryPage() {
       sseCloseRef.current?.();
       sseCloseRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   async function handleDelete(id: string) {
     setDeleting(id);
@@ -85,15 +114,44 @@ export function LibraryPage() {
   }
 
   async function handleEnqueueJob(bookId: string, type: 'abstract_generation' | 'embedding_generation') {
-    await bookApi.enqueueJob(bookId, type);
-    void load();
+    if (type === 'abstract_generation') {
+      const book = books.find((b) => b.id === bookId);
+      if (
+        book &&
+        book.chunkCount > 0 &&
+        book.embeddedAt &&
+        bookStoredEmbeddingProfileDiffers(book, currentEmbeddingModel, currentEmbeddingPassagePrefix)
+      ) {
+        const ok = window.confirm(
+          'Chunk vectors for this volume were built with a different embedding model or passage prefix than your current settings. ' +
+            'Regenerating abstracts would embed summaries under the new profile while chunk vectors stay on the old one — semantic search assumes one profile per volume.\n\n' +
+            'Proceed? This queues volume embedding (rebuild chunk vectors to match settings), then full abstract regeneration (new summary text and abstract embeddings).\n\n' +
+            'Cancel = do nothing.',
+        );
+        if (ok) {
+          try {
+            await bookApi.enqueueJob(bookId, 'embedding_generation', { chainAbstractGeneration: true });
+            void load();
+          } catch (e) {
+            if (e instanceof ApiError) window.alert(e.message);
+            else throw e;
+          }
+        }
+        return;
+      }
+    }
+    try {
+      await bookApi.enqueueJob(bookId, type);
+      void load();
+    } catch (e) {
+      if (e instanceof ApiError) window.alert(e.message);
+      else throw e;
+    }
   }
 
   async function handleSetEmbeddingOverride(bookId: string, override: boolean) {
     await bookApi.setEmbeddingOverride(bookId, override);
-    setBooks((prev) =>
-      prev.map((b) => (b.id === bookId ? { ...b, embeddingModelOverride: override } : b)),
-    );
+    await load();
   }
 
   async function handleRenameSeries(seriesId: string) {
@@ -256,7 +314,9 @@ export function LibraryPage() {
             const volCount = group.books.length;
             const abstractHave = group.books.filter((b) => !!b.abstractedAt).length;
             const needRag = group.books.filter((b) => b.chunkCount > 0);
-            const ragHave = needRag.filter((b) => bookHasRag(b, currentEmbeddingModel));
+            const ragHave = needRag.filter((b) =>
+              bookHasRag(b, currentEmbeddingModel, currentEmbeddingPassagePrefix),
+            );
             const absStrike = volCount > 0 && abstractHave === 0;
             const absWarn = abstractHave > 0 && abstractHave < volCount;
             const ragEligible = needRag.length;
@@ -338,8 +398,9 @@ export function LibraryPage() {
                     <BookCard
                       key={book.id}
                       book={book}
-                      bookHasRag={bookHasRag(book, currentEmbeddingModel)}
+                      bookHasRag={bookHasRag(book, currentEmbeddingModel, currentEmbeddingPassagePrefix)}
                       currentEmbeddingModel={currentEmbeddingModel}
+                      currentEmbeddingPassagePrefix={currentEmbeddingPassagePrefix}
                       deleting={deleting === book.id}
                       onDelete={() => handleDelete(book.id)}
                       onViewAbstracts={() => setAbstractsBookId(book.id)}
@@ -382,8 +443,14 @@ export function LibraryPage() {
           bookId={inspectorBookId}
           bookTitle={inspectorBook.title}
           bookEmbeddingModel={inspectorBook.embeddingModel}
+          bookEmbeddingPassagePrefixSnapshot={inspectorBook.embeddingPassagePrefixSnapshot}
+          bookEmbeddedAt={inspectorBook.embeddedAt}
+          bookChunkCount={inspectorBook.chunkCount}
           currentEmbeddingModel={currentEmbeddingModel}
+          currentEmbeddingPassagePrefix={currentEmbeddingPassagePrefix}
           embeddingModelOverride={inspectorBook.embeddingModelOverride}
+          embeddingOverrideLockModel={inspectorBook.embeddingOverrideLockModel}
+          embeddingOverrideLockPassagePrefix={inspectorBook.embeddingOverrideLockPassagePrefix}
           onClose={() => setInspectorBookId(null)}
           onSetEmbeddingOverride={(v) => void handleSetEmbeddingOverride(inspectorBookId, v)}
         />
@@ -422,12 +489,13 @@ function CoverageWarnGlyph() {
 }
 
 function BookCard({
-  book, bookHasRag, currentEmbeddingModel, deleting, onDelete, onViewAbstracts,
+  book, bookHasRag, currentEmbeddingModel, currentEmbeddingPassagePrefix, deleting, onDelete, onViewAbstracts,
   onRetryAbstracts, onRetryEmbedding, onInspectEmbeddings, onExport, onSetEmbeddingOverride,
 }: {
   book: Book;
   bookHasRag: boolean;
   currentEmbeddingModel: string | null;
+  currentEmbeddingPassagePrefix: string;
   deleting: boolean;
   onDelete: () => void;
   onViewAbstracts: () => void;
@@ -442,11 +510,14 @@ function BookCard({
   const hasEmbeddings = !!book.embeddedAt;
   const showRagStrike = book.chunkCount === 0 || !bookHasRag;
 
-  const modelMismatch =
+  const overrideActive = embeddingOverrideActive(
+    book,
+    currentEmbeddingModel,
+    currentEmbeddingPassagePrefix,
+  );
+  const profileMismatch =
     hasEmbeddings &&
-    !!book.embeddingModel &&
-    !!currentEmbeddingModel &&
-    book.embeddingModel !== currentEmbeddingModel;
+    bookEmbeddingProfileMismatch(book, currentEmbeddingModel, currentEmbeddingPassagePrefix);
 
   return (
     <div className={styles.bookCard}>
@@ -475,20 +546,22 @@ function BookCard({
         <span className={showRagStrike ? styles.featureStruck : ''}>RAG</span>
       </div>
 
-      {modelMismatch && !book.embeddingModelOverride && !confirmingOverride && (
+      {profileMismatch && !overrideActive && !confirmingOverride && (
         <div className={styles.modelMismatch}>
-          <span title={`Embedded with "${book.embeddingModel}" — current: "${currentEmbeddingModel}"`}>
-            ⚠ model mismatch — RAG disabled
+          <span
+            title={`Stored: model "${book.embeddingModel ?? ''}", passage "${normalizeEmbeddingPrefix(book.embeddingPassagePrefixSnapshot)}". Current: model "${currentEmbeddingModel ?? ''}", passage "${normalizeEmbeddingPrefix(currentEmbeddingPassagePrefix)}". Re-embed or allow override.`}
+          >
+            ⚠ embedding profile mismatch — RAG disabled
           </span>
           <button className={styles.overrideBtn} onClick={() => setConfirmingOverride(true)}>
             Allow RAG
           </button>
         </div>
       )}
-      {modelMismatch && !book.embeddingModelOverride && confirmingOverride && (
+      {profileMismatch && !overrideActive && confirmingOverride && (
         <div className={styles.modelMismatchConfirm}>
           <span className={styles.modelMismatchConfirmText}>
-            Scores will be unreliable unless models share the same vector space. Continue?
+            Retrieval scores may be unreliable (model and/or query/passage instruct prefixes). Continue?
           </span>
           <div className={styles.modelMismatchConfirmBtns}>
             <button
@@ -503,15 +576,17 @@ function BookCard({
           </div>
         </div>
       )}
-      {book.embeddingModelOverride && modelMismatch && (
+      {overrideActive && (
         <div className={styles.modelOverrideActive}>
-          <span title={`Stored: ${book.embeddingModel} — current: ${currentEmbeddingModel}`}>
+          <span
+            title={`Override matches current settings: model "${(currentEmbeddingModel ?? '').trim()}", passage "${normalizeEmbeddingPrefix(currentEmbeddingPassagePrefix)}". Stored vectors: model "${(book.embeddingModel ?? '').trim()}", passage "${normalizeEmbeddingPrefix(book.embeddingPassagePrefixSnapshot)}".`}
+          >
             ⚓ RAG override active
           </span>
           <button
             className={styles.overrideBtnRevoke}
             onClick={() => onSetEmbeddingOverride(false)}
-            title="Revoke override — re-enable model mismatch check"
+            title="Revoke override — re-enable embedding profile check (model and passage prefix)"
           >
             Revoke
           </button>

@@ -2,11 +2,11 @@ import { randomUUID } from 'crypto';
 import JSZip from 'jszip';
 import { getDb } from './database';
 import { listBooksBySeries, getChunks, getAbstracts } from './book-service';
-import { getEmbeddingModel } from './config-service';
+import { getEmbeddingModel, getEmbeddingPassagePrefix } from './config-service';
 import type { ImportResult } from '@shared/types';
 import { version } from '../../../package.json';
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 const APP_VERSION = version;
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -43,6 +43,7 @@ interface ExportBook {
   wordCount: number;
   chunkCount: number;
   embeddingModel?: string;
+  embeddingPassagePrefixSnapshot?: string;
 }
 
 interface Manifest {
@@ -68,6 +69,7 @@ function packBook(zip: JSZip, book: ReturnType<typeof listBooksBySeries>[number]
     wordCount: book.wordCount,
     chunkCount: book.chunkCount,
     embeddingModel: book.embeddingModel,
+    embeddingPassagePrefixSnapshot: book.embeddingPassagePrefixSnapshot ?? '',
   } satisfies ExportBook, null, 2));
 
   const chunks = getChunks(book.id);
@@ -277,8 +279,8 @@ export async function importZip(buffer: Buffer, targetSeriesId?: string): Promis
     db.prepare(
       `INSERT INTO books
          (id, series_id, title, author, year, genre, language, file_path,
-          word_count, chunk_count, embedding_model, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          word_count, chunk_count, embedding_model, embedding_passage_prefix_snapshot, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       bookId,
       seriesId,
@@ -291,6 +293,7 @@ export async function importZip(buffer: Buffer, targetSeriesId?: string): Promis
       bookMeta.wordCount,
       bookMeta.chunkCount,
       bookMeta.embeddingModel ?? null,
+      bookMeta.embeddingPassagePrefixSnapshot ?? null,
       now,
     );
 
@@ -387,19 +390,25 @@ export async function importZip(buffer: Buffer, targetSeriesId?: string): Promis
         embeddings.find((e) => e.source === 'chunk')?.model ?? null;
       const resolvedEmbeddingModel = bookMeta.embeddingModel ?? embeddingModelFromVectors;
 
+      const snapP = bookMeta.embeddingPassagePrefixSnapshot ?? '';
+
       if (resolvedEmbeddingModel) {
-        db.prepare('UPDATE books SET embedded_at = ?, embedding_model = ? WHERE id = ?').run(
-          now, resolvedEmbeddingModel, bookId,
-        );
+        db.prepare(
+          `UPDATE books SET embedded_at = ?, embedding_model = ?, embedding_passage_prefix_snapshot = ? WHERE id = ?`,
+        ).run(now, resolvedEmbeddingModel, snapP, bookId);
       } else {
-        db.prepare('UPDATE books SET embedded_at = ? WHERE id = ?').run(now, bookId);
+        db.prepare(`UPDATE books SET embedded_at = ?, embedding_passage_prefix_snapshot = ? WHERE id = ?`).run(now, snapP, bookId);
       }
 
-      // Warn if the imported embeddings were built with a different model than currently configured.
       const currentModel = getEmbeddingModel();
+      const currentP = getEmbeddingPassagePrefix();
       if (resolvedEmbeddingModel && currentModel && resolvedEmbeddingModel !== currentModel) {
         const mismatchNote = `Embeddings use model "${resolvedEmbeddingModel}" but current model is "${currentModel}" — re-run embedding generation.`;
         warning = warning ? `${warning} ${mismatchNote}` : mismatchNote;
+      }
+      if (resolvedEmbeddingModel && currentModel && snapP !== currentP) {
+        const prefixNote = `Imported passage embedding prefix differs from current settings — re-embed or allow per-book RAG override.`;
+        warning = warning ? `${warning} ${prefixNote}` : prefixNote;
       }
     }
 

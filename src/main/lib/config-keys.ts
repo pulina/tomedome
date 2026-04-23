@@ -9,6 +9,8 @@ export const CONFIG_KEY = {
   llmProvider: 'llm_provider',
   llmModel: 'llm_model',
   embeddingModel: 'embedding_model',
+  embeddingQueryPrefix: 'embedding_query_prefix',
+  embeddingPassagePrefix: 'embedding_passage_prefix',
   llmOllamaBaseUrl: 'llm_ollama_base_url',
   llmLmStudioBaseUrl: 'llm_lmstudio_base_url',
   /** Legacy single global key; migrated to per-provider keys. */

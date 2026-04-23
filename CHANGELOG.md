@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-23
+
+### Added
+
+- Optional asymmetric embedding instruct prefixes (query vs passage) for RAG, with passage prefix snapshotted per volume; supports instruct models such as E5, BGE, and Qwen embedding lines. Symmetric models should leave prefixes empty.
+- Chained **embedding → full abstract regeneration** when chunk/profile settings no longer match stored vectors (`chainAbstractGeneration`); job list shows **Embeddings + abstracts** (tooltip explains the two phases).
+- At most **one** pending or running abstract-or-embedding job per book; starting another returns **409** until the current job finishes or is cancelled.
+
+### Changed
+
+- **Ingest**: choosing both abstracts and embeddings runs **one** sequential pipeline on the server instead of two parallel jobs.
+- **HTTP client**: error alerts use the API `message` body only (no `HTTP <status>:` prefix).
+- **Chat** context API: `ragProfileMismatchCount` (was `ragModelMismatchCount`); RAG pill copy refers to embedding **profile** (model and/or passage prefix).
+
 ## [0.1.4] - 2026-04-22
 
 ### Added
@@ -64,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stats and logs page for monitoring ingestion jobs and LLM call history
 - Cross-platform builds: macOS (arm64, x64), Windows (x64), Linux (deb, rpm)
 
-[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/pulina/tomedome/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/pulina/tomedome/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/pulina/tomedome/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/pulina/tomedome/compare/v0.1.1...v0.1.2

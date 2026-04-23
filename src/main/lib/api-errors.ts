@@ -2,6 +2,7 @@ export type ApiErrorKind =
   | 'validation'
   | 'not_found'
   | 'unprocessable'
+  | 'conflict'
   | 'upstream'
   | 'internal';
 

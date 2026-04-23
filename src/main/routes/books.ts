@@ -1,15 +1,35 @@
 import { FastifyInstance } from 'fastify';
 import { chunkText, detectLanguage, getPreviewStats, parseFile, titleFromFilename } from '../services/ingest-service';
 import { clearAbstracts, createBook, deleteBook, getAbstracts, getBook, listBooks, saveChunks, setBookEmbeddingOverride } from '../services/book-service';
-import { createJob, enqueue } from '../services/job-queue';
+import { createBookBackgroundJobIfIdle, enqueue } from '../services/job-queue';
 import { runAbstractGeneration, runSeriesAbstractGeneration } from '../services/abstract-service';
-import { runAbstractEmbeddingGeneration, runEmbeddingGeneration } from '../services/embedding-service';
+import {
+  abstractEmbeddingProfileBlockedReason,
+  runAbstractEmbeddingGeneration,
+  runEmbeddingGeneration,
+} from '../services/embedding-service';
 import { deleteBookAbstractEmbeddings, deleteBookEmbeddings, searchBookAbstractEmbeddings, searchBookEmbeddings } from '../services/vector-store';
 import { getAdapter } from '../llm';
-import { getApiKeyPlaintext, getEmbeddingModel, getLlmConfig } from '../services/config-service';
+import {
+  getApiKeyPlaintext,
+  getEmbeddingModel,
+  getEmbeddingQueryPrefix,
+  getLlmConfig,
+} from '../services/config-service';
+import { withEmbeddingQueryPrefix } from '@shared/embedding-profile';
 import type { ChunkingOptions } from '../../shared/types';
 import { apiErr } from '../lib/api-errors';
 import { schemas } from './schemas';
+
+const BOOK_JOB_CONFLICT_BODY = apiErr(
+  'conflict',
+  'A background job is already queued or running for this book. Wait for it to finish or cancel it first.',
+);
+
+interface BookEnqueueJobBody {
+  type: 'abstract_generation' | 'embedding_generation';
+  chainAbstractGeneration?: boolean;
+}
 
 interface PreviewBody {
   filePath: string;
@@ -92,19 +112,41 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
         const book = createBook({ seriesId, title, author, year, genre, language, filePath, wordCount });
         saveChunks(book.id, chunks);
         const createdJobs = [];
-        if (jobTypes.includes('abstract_generation')) {
-          const job = createJob('abstract_generation', book.id);
-          const seriesId = book.seriesId;
+        const wantAbstract = jobTypes.includes('abstract_generation');
+        const wantEmbed = jobTypes.includes('embedding_generation');
+        const bookSeriesId = book.seriesId;
+
+        if (wantAbstract && wantEmbed) {
+          const job = createBookBackgroundJobIfIdle('abstract_generation', book.id, {
+            ingestAbstractThenEmbed: true,
+          });
+          if (!job) return reply.code(409).send(BOOK_JOB_CONFLICT_BODY);
           enqueue(job.id, async (jobId, signal) => {
-            await runAbstractGeneration(jobId, book.id, signal);
-            if (!signal.aborted && seriesId) {
-              void runSeriesAbstractGeneration(seriesId, new AbortController().signal);
+            await runAbstractGeneration(jobId, book.id, signal, { skipFinalAbstractEmbedding: true });
+            if (!signal.aborted && bookSeriesId) {
+              void runSeriesAbstractGeneration(bookSeriesId, new AbortController().signal);
+            }
+            if (!signal.aborted) {
+              deleteBookEmbeddings(book.id);
+              deleteBookAbstractEmbeddings(book.id);
+              await runEmbeddingGeneration(jobId, book.id, signal);
+              if (!signal.aborted) await runAbstractEmbeddingGeneration(book.id, signal);
             }
           });
           createdJobs.push(job);
-        }
-        if (jobTypes.includes('embedding_generation')) {
-          const job = createJob('embedding_generation', book.id);
+        } else if (wantAbstract) {
+          const job = createBookBackgroundJobIfIdle('abstract_generation', book.id);
+          if (!job) return reply.code(409).send(BOOK_JOB_CONFLICT_BODY);
+          enqueue(job.id, async (jobId, signal) => {
+            await runAbstractGeneration(jobId, book.id, signal);
+            if (!signal.aborted && bookSeriesId) {
+              void runSeriesAbstractGeneration(bookSeriesId, new AbortController().signal);
+            }
+          });
+          createdJobs.push(job);
+        } else if (wantEmbed) {
+          const job = createBookBackgroundJobIfIdle('embedding_generation', book.id);
+          if (!job) return reply.code(409).send(BOOK_JOB_CONFLICT_BODY);
           enqueue(job.id, async (jobId, signal) => {
             await runEmbeddingGeneration(jobId, book.id, signal);
             if (!signal.aborted) await runAbstractEmbeddingGeneration(book.id, signal);
@@ -135,17 +177,24 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
    * Re-enqueue abstract_generation or embedding_generation for an existing book.
    * Clears existing data before re-running to avoid duplicates.
    */
-  fastify.post<{ Params: { id: string }; Body: { type: string } }>(
+  fastify.post<{ Params: { id: string }; Body: BookEnqueueJobBody }>(
     '/api/books/:id/jobs',
     { schema: { params: schemas.idParam, body: schemas.bookJobBody } },
     async (req, reply) => {
       const book = getBook(req.params.id);
       if (!book) return reply.code(404).send(apiErr('not_found', 'Book not found'));
 
-      const { type } = req.body ?? {};
+      const body = req.body;
+      const { type } = body;
+      const chainAbstractGeneration =
+        type === 'embedding_generation' && body.chainAbstractGeneration === true;
+
       if (type === 'abstract_generation') {
+        const blocked = abstractEmbeddingProfileBlockedReason(book.id);
+        if (blocked) return reply.code(422).send(apiErr('unprocessable', blocked));
+        const job = createBookBackgroundJobIfIdle('abstract_generation', book.id);
+        if (!job) return reply.code(409).send(BOOK_JOB_CONFLICT_BODY);
         clearAbstracts(book.id);
-        const job = createJob('abstract_generation', book.id);
         const seriesId = book.seriesId;
         enqueue(job.id, async (jobId, signal) => {
           await runAbstractGeneration(jobId, book.id, signal);
@@ -157,12 +206,25 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
       }
 
       if (type === 'embedding_generation') {
+        const job = createBookBackgroundJobIfIdle('embedding_generation', book.id, {
+          chainAbstractGeneration: chainAbstractGeneration,
+        });
+        if (!job) return reply.code(409).send(BOOK_JOB_CONFLICT_BODY);
         deleteBookEmbeddings(book.id);
         deleteBookAbstractEmbeddings(book.id);
-        const job = createJob('embedding_generation', book.id);
+        const seriesId = book.seriesId;
         enqueue(job.id, async (jobId, signal) => {
           await runEmbeddingGeneration(jobId, book.id, signal);
-          if (!signal.aborted) await runAbstractEmbeddingGeneration(book.id, signal);
+          if (signal.aborted) return;
+          if (chainAbstractGeneration) {
+            clearAbstracts(book.id);
+            await runAbstractGeneration(jobId, book.id, signal);
+            if (!signal.aborted && seriesId) {
+              void runSeriesAbstractGeneration(seriesId, new AbortController().signal);
+            }
+          } else {
+            await runAbstractEmbeddingGeneration(book.id, signal);
+          }
         });
         return reply.code(201).send({ job });
       }
@@ -220,7 +282,8 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
       if (!embeddingModel)
         return reply.code(422).send(apiErr('unprocessable', 'No embedding model configured'));
 
-      const vectors = await adapter.embed([query.trim()], embeddingModel);
+      const qPrefix = getEmbeddingQueryPrefix();
+      const vectors = await adapter.embed([withEmbeddingQueryPrefix(query.trim(), qPrefix)], embeddingModel);
       const queryVector = vectors[0];
       if (!queryVector)
         return reply.code(422).send(apiErr('unprocessable', 'Embedding returned no vector'));

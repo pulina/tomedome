@@ -21,6 +21,8 @@ interface SaveBody {
   apiKey?: string;
   model: string;
   embeddingModel?: string;
+  embeddingQueryPrefix?: string;
+  embeddingPassagePrefix?: string;
   ollamaBaseUrl?: string;
   lmStudioBaseUrl?: string;
 }
@@ -79,6 +81,8 @@ export async function registerConfigRoutes(fastify: FastifyInstance): Promise<vo
         provider: body.provider,
         model: body.model,
         embeddingModel: typeof body.embeddingModel === 'string' ? body.embeddingModel : undefined,
+        embeddingQueryPrefix: typeof body.embeddingQueryPrefix === 'string' ? body.embeddingQueryPrefix : undefined,
+        embeddingPassagePrefix: typeof body.embeddingPassagePrefix === 'string' ? body.embeddingPassagePrefix : undefined,
         apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
         ollamaBaseUrl: typeof body.ollamaBaseUrl === 'string' ? body.ollamaBaseUrl : undefined,
         lmStudioBaseUrl: typeof body.lmStudioBaseUrl === 'string' ? body.lmStudioBaseUrl : undefined,

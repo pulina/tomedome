@@ -40,8 +40,15 @@ export const bookApi = {
   getAbstracts: (id: string): Promise<Abstract[]> =>
     api.get<Abstract[]>(`/api/books/${id}/abstracts`),
 
-  enqueueJob: (id: string, type: 'abstract_generation' | 'embedding_generation'): Promise<{ job: Job }> =>
-    api.post<{ job: Job }>(`/api/books/${id}/jobs`, { type }),
+  enqueueJob: (
+    id: string,
+    type: 'abstract_generation' | 'embedding_generation',
+    opts?: { chainAbstractGeneration?: boolean },
+  ): Promise<{ job: Job }> =>
+    api.post<{ job: Job }>(`/api/books/${id}/jobs`, {
+      type,
+      ...(opts?.chainAbstractGeneration ? { chainAbstractGeneration: true } : {}),
+    }),
 
   searchEmbeddings: (
     id: string,

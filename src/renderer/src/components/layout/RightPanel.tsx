@@ -127,6 +127,13 @@ function JobCard({ job, onCancel }: { job: Job; onCancel: (id: string) => void }
     embedding_generation: 'Embeddings',
   };
 
+  const jobTypeLabel =
+    job.ingestAbstractThenEmbed
+      ? 'Abstracts + embeddings'
+      : job.type === 'embedding_generation' && job.chainAbstractGeneration
+        ? 'Embeddings + abstracts'
+        : JOB_LABELS[job.type] ?? job.type;
+
   const STEP_LABELS: Record<string, string> = {
     abstract_generation: 'steps',
     embedding_generation: 'chunks',
@@ -144,7 +151,18 @@ function JobCard({ job, onCancel }: { job: Job; onCancel: (id: string) => void }
     <div className={styles.jobCard}>
       <div className={styles.jobHeader}>
         <span className={styles.jobBook}>{job.bookTitle}</span>
-        <span className={styles.jobType}>{JOB_LABELS[job.type] ?? job.type}</span>
+        <span
+          className={styles.jobType}
+          title={
+            job.ingestAbstractThenEmbed
+              ? 'Writes abstract summaries first, then chunk vectors and abstract vectors in one background job.'
+              : job.type === 'embedding_generation' && job.chainAbstractGeneration
+                ? 'Re-embeds chunk vectors to match settings, then regenerates abstract summaries and their embeddings.'
+                : undefined
+          }
+        >
+          {jobTypeLabel}
+        </span>
       </div>
 
       {job.model && (

@@ -75,6 +75,8 @@ export function getLlmConfig(): LlmConfig {
     keysSet,
     model: getConfigValue(CONFIG_KEY.llmModel) ?? '',
     embeddingModel,
+    embeddingQueryPrefix: getConfigValue(CONFIG_KEY.embeddingQueryPrefix) ?? '',
+    embeddingPassagePrefix: getConfigValue(CONFIG_KEY.embeddingPassagePrefix) ?? '',
     ollamaBaseUrl: getConfigValue(CONFIG_KEY.llmOllamaBaseUrl) ?? DEFAULT_OLLAMA_URL,
     lmStudioBaseUrl: getConfigValue(CONFIG_KEY.llmLmStudioBaseUrl) ?? DEFAULT_LMSTUDIO_URL,
   };
@@ -87,11 +89,21 @@ export function getEmbeddingModel(): string {
   return provider ? (DEFAULT_EMBEDDING_MODELS[provider] ?? '') : '';
 }
 
+export function getEmbeddingQueryPrefix(): string {
+  return getConfigValue(CONFIG_KEY.embeddingQueryPrefix) ?? '';
+}
+
+export function getEmbeddingPassagePrefix(): string {
+  return getConfigValue(CONFIG_KEY.embeddingPassagePrefix) ?? '';
+}
+
 export interface LlmConfigInput {
   provider: LlmProvider;
   apiKey?: string; // if omitted or empty, existing key is kept
   model: string;
   embeddingModel?: string;
+  embeddingQueryPrefix?: string;
+  embeddingPassagePrefix?: string;
   ollamaBaseUrl?: string;
   lmStudioBaseUrl?: string;
 }
@@ -101,6 +113,12 @@ export function saveLlmConfig(input: LlmConfigInput): void {
   setConfigValue(CONFIG_KEY.llmModel, input.model);
   if (input.embeddingModel !== undefined) {
     setConfigValue(CONFIG_KEY.embeddingModel, input.embeddingModel);
+  }
+  if (input.embeddingQueryPrefix !== undefined) {
+    setConfigValue(CONFIG_KEY.embeddingQueryPrefix, input.embeddingQueryPrefix);
+  }
+  if (input.embeddingPassagePrefix !== undefined) {
+    setConfigValue(CONFIG_KEY.embeddingPassagePrefix, input.embeddingPassagePrefix);
   }
   if (input.ollamaBaseUrl !== undefined) {
     setConfigValue(CONFIG_KEY.llmOllamaBaseUrl, input.ollamaBaseUrl);

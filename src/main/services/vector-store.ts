@@ -95,20 +95,34 @@ export function searchBookAbstractEmbeddings(
 }
 
 /** Cross-book semantic search — used for RAG context injection in chat. */
-export function searchAllForRag(queryVector: number[], topN: number, model?: string, seriesId?: string | null): RagResult[] {
+export function searchAllForRag(
+  queryVector: number[],
+  topN: number,
+  model?: string,
+  seriesId?: string | null,
+  passagePrefix?: string,
+): RagResult[] {
   const seriesClause = seriesId ? ' AND b.series_id = ?' : '';
+  const pp = passagePrefix ?? '';
   const sql = model
     ? `SELECT ce.chunk_id, ce.vector, c.book_id, c.chapter_number, c.chapter_title, c.raw_text, b.title AS book_title
        FROM chunk_embeddings ce
        JOIN chunks c ON c.id = ce.chunk_id
        JOIN books b ON b.id = c.book_id
-       WHERE (ce.model = ? OR b.embedding_model_override = 1)${seriesClause}`
+       WHERE (
+         (ce.model = ? AND IFNULL(b.embedding_passage_prefix_snapshot,'') = ?)
+         OR (
+           b.embedding_model_override = 1
+           AND IFNULL(b.embedding_override_lock_model,'') = ?
+           AND IFNULL(b.embedding_override_lock_passage_prefix,'') = ?
+         )
+       )${seriesClause}`
     : `SELECT ce.chunk_id, ce.vector, c.book_id, c.chapter_number, c.chapter_title, c.raw_text, b.title AS book_title
        FROM chunk_embeddings ce
        JOIN chunks c ON c.id = ce.chunk_id
        JOIN books b ON b.id = c.book_id${seriesId ? ' WHERE b.series_id = ?' : ''}`;
   const params: unknown[] = [];
-  if (model) params.push(model);
+  if (model) params.push(model, pp, model, pp);
   if (seriesId) params.push(seriesId);
   const rows = getDb().prepare(sql).all(...params) as Array<{
     chunk_id: string;
@@ -260,13 +274,24 @@ export function searchAbstractsForRag(
   levels: string[],
   model?: string,
   seriesId?: string | null,
+  passagePrefix?: string,
 ): AbstractRagResult[] {
   if (levels.length === 0) return [];
 
   const placeholders = levels.map(() => '?').join(', ');
-  const modelClause = model ? ' AND (ae.model = ? OR b.embedding_model_override = 1)' : '';
+  const pp = passagePrefix ?? '';
+  const modelClause = model
+    ? ` AND (
+        (ae.model = ? AND IFNULL(b.embedding_passage_prefix_snapshot,'') = ?)
+        OR (
+          b.embedding_model_override = 1
+          AND IFNULL(b.embedding_override_lock_model,'') = ?
+          AND IFNULL(b.embedding_override_lock_passage_prefix,'') = ?
+        )
+      )`
+    : '';
   const seriesClause = seriesId ? ' AND b.series_id = ?' : '';
-  const params: unknown[] = model ? [...levels, model] : [...levels];
+  const params: unknown[] = model ? [...levels, model, pp, model, pp] : [...levels];
   if (seriesId) params.push(seriesId);
   const rows = getDb()
     .prepare(

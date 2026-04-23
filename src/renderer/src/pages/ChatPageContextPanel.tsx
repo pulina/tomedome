@@ -70,7 +70,7 @@ export function ChatContextSourcesBar({ data, ctxTokens, ctxExact, onCompact, co
     bookAbstractMissingCount,
     ragEligibleBookCount,
     ragEmbeddingMissingCount,
-    ragModelMismatchCount,
+    ragProfileMismatchCount,
     seriesScoped,
   } = data;
 
@@ -90,7 +90,7 @@ export function ChatContextSourcesBar({ data, ctxTokens, ctxExact, onCompact, co
   const warnBooks =
     bookAbstractMissingCount > 0 && bookAbstractMissingCount < bookCount;
 
-  const ragUnavailableCount = ragEmbeddingMissingCount + ragModelMismatchCount;
+  const ragUnavailableCount = ragEmbeddingMissingCount + ragProfileMismatchCount;
   const strikeRag =
     ragEligibleBookCount === 0 ||
     (ragEligibleBookCount > 0 && ragUnavailableCount === ragEligibleBookCount);
@@ -179,27 +179,27 @@ export function ChatContextSourcesBar({ data, ctxTokens, ctxExact, onCompact, co
               ? ragEligibleBookCount === 0
                 ? 'No chunks in this series — nothing to embed for retrieval.'
                 : strikeRag
-                  ? ragModelMismatchCount === ragEligibleBookCount
-                    ? 'All volumes use embeddings from a different model — re-embed or allow override in the library.'
-                    : ragModelMismatchCount > 0
-                      ? 'All volumes with chunks are either not embedded or use a mismatched model.'
+                  ? ragProfileMismatchCount === ragEligibleBookCount
+                    ? 'All volumes use an embedding profile that does not match current settings — re-embed or allow override in the library.'
+                    : ragProfileMismatchCount > 0
+                      ? 'All volumes with chunks are either not embedded or have a mismatched embedding profile (model and/or passage prefix).'
                       : 'Chunks exist but none are embedded yet.'
                   : warnRag
-                    ? ragModelMismatchCount > 0
-                      ? 'Some volumes have embeddings from a different model — re-embed or allow override in the library.'
+                    ? ragProfileMismatchCount > 0
+                      ? 'Some volumes have an embedding profile that does not match current settings — re-embed or allow override in the library.'
                       : 'Some volumes with chunks are not embedded yet.'
                     : 'Chunks are embedded for retrieval (plus keyword search when configured).'
               : ragEligibleBookCount === 0
                 ? 'No chunks in the library — nothing to embed.'
                 : strikeRag
-                  ? ragModelMismatchCount === ragEligibleBookCount
-                    ? 'All books use embeddings from a different model — re-embed or allow override in the library.'
-                    : ragModelMismatchCount > 0
-                      ? 'All books with chunks are either not embedded or use a mismatched model.'
+                  ? ragProfileMismatchCount === ragEligibleBookCount
+                    ? 'All books use an embedding profile that does not match current settings — re-embed or allow override in the library.'
+                    : ragProfileMismatchCount > 0
+                      ? 'All books with chunks are either not embedded or have a mismatched embedding profile (model and/or passage prefix).'
                       : 'Chunks exist but none are embedded yet.'
                   : warnRag
-                    ? ragModelMismatchCount > 0
-                      ? 'Some books have embeddings from a different model — re-embed or allow override in the library.'
+                    ? ragProfileMismatchCount > 0
+                      ? 'Some books have an embedding profile that does not match current settings — re-embed or allow override in the library.'
                       : 'Some books with chunks are not embedded yet.'
                     : 'Chunks are embedded — retrieval can use vectors (plus keyword search when configured).'
           }
