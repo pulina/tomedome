@@ -1,5 +1,12 @@
 import { api } from './client';
-import type { Chat, ChatContextAvailability, ChatMessage, LlmCall } from '@shared/types';
+import type {
+  Chat,
+  ChatContextAvailability,
+  ChatMessage,
+  LlmCall,
+  LlmCallPurpose,
+  LogLevel,
+} from '@shared/types';
 
 export const chatApi = {
   list: () => api.get<Chat[]>('/api/chats'),
@@ -18,12 +25,15 @@ export const chatApi = {
 };
 
 export const logsApi = {
-  app: (level?: string, limit = 500) => {
+  app: (levels: LogLevel[] | undefined, limit = 500) => {
     const qs = new URLSearchParams();
-    if (level) qs.set('level', level);
+    if (levels !== undefined && levels.length > 0) qs.set('levels', levels.join(','));
     qs.set('limit', String(limit));
     return api.get<Array<Record<string, unknown>>>(`/api/logs/app?${qs.toString()}`);
   },
-  llm: (limit = 200) =>
-    api.get<LlmCall[]>(`/api/logs/llm?limit=${limit}`),
+  llm: (limit = 200, purposes?: LlmCallPurpose[]) => {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (purposes?.length) qs.set('purposes', purposes.join(','));
+    return api.get<LlmCall[]>(`/api/logs/llm?${qs.toString()}`);
+  },
 };

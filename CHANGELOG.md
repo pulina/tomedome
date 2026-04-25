@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6]
+
+### Changed
+
+- **Observability (Stats / logs)**: LLM Calls and App Log share the same filter UI (multi-select, mark/unmark all, close on outside click); filters default to “all” when opening those tabs; no selection shows no rows; table headers match the token stats styling; Prompt/Output columns carry a small `[tokens]` label. App log API accepts optional comma-separated `levels` for exact severity filtering. LLM adapter logging covers more provider paths (embed, rerank, list/load model, non-chat calls). Clearing logs now archives LLM token/latency aggregates so stats persist after log purge; “Reset all data” clears that archive too.
+
 ## [0.1.5] - 2026-04-23
 
 ### Added
@@ -78,7 +84,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stats and logs page for monitoring ingestion jobs and LLM call history
 - Cross-platform builds: macOS (arm64, x64), Windows (x64), Linux (deb, rpm)
 
-[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/pulina/tomedome/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/pulina/tomedome/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/pulina/tomedome/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/pulina/tomedome/compare/v0.1.2...v0.1.3

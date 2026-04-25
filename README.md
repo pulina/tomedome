@@ -222,11 +222,11 @@ licenses/        # Redistributed font license texts (SIL OFL)
 
 Planned and in-flight work:
 
+- **Reranker support** for lmstudio and ollama
 - **Reader-scoped filtering** — Narrow RAG and answers by reading progress: exclude whole books or individual chapters from context while still respecting spoiler boundaries for what you have not read.
 - **Full-text search as a tool** — Expose SQLite FTS (or equivalent) as an LLM-callable tool for precise lexical lookups alongside embedding retrieval.
 - **Entity resolution and wiki** — Combine LLM-based named-entity extraction with fuzzy matching (e.g. Levenshtein) to merge aliases and typos into a stable entity dictionary or in-app wiki.
 - **Theme support** — Multiple UI themes beyond the current skinnable default (consistent with the theme contract under `src/renderer/src/themes/`).
-- **Log rotation with preserved stats** — Rotate log files without losing aggregate diagnostics (retain roll-up metrics or summaries across rotations).
 - **Model evaluation benchmark (synthetic book)** — Regression harness using a [synthetic book and golden Q/A set](docs/synthetic-book-evaluation.md) so scores reflect retrieval and grounding, not memorized training data; includes end-to-end and retrieval-only metrics (see that doc).
 - **Automated tests** — `npm test` (or CI) covering core backend services, ingestion/RAG paths where practical, and critical renderer logic; headless-friendly where possible (see [CONTRIBUTING.md — Testing](CONTRIBUTING.md#8-testing)).
 

@@ -77,7 +77,29 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export type LlmCallPurpose = 'chat' | 'title' | 'abstract' | 'rag' | 'rerank' | 'compact';
+export type LlmCallPurpose =
+  | 'chat'
+  | 'title'
+  | 'abstract'
+  | 'rag'
+  | 'rerank'
+  | 'compact'
+  | 'embedding'
+  | 'list_models'
+  | 'load_model';
+
+/** All values of `LlmCallPurpose` — keep in sync when extending the union. */
+export const LLM_CALL_PURPOSES: readonly LlmCallPurpose[] = [
+  'chat',
+  'title',
+  'abstract',
+  'rag',
+  'rerank',
+  'compact',
+  'embedding',
+  'list_models',
+  'load_model',
+];
 
 export interface LlmCall {
   id: string;

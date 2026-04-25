@@ -37,6 +37,8 @@ export const schemas = {
     type: 'object',
     properties: {
       level: { type: 'string', enum: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] },
+      /** Comma-separated log levels; exact match. Empty after parse → no rows. Omit with no `level` → all levels. */
+      levels: { type: 'string' },
       limit: { type: 'string' },
     },
   },
@@ -45,6 +47,8 @@ export const schemas = {
     properties: {
       limit: { type: 'string' },
       chatId: { type: 'string' },
+      /** Comma-separated `LlmCallPurpose` values; omit for all purposes. */
+      purposes: { type: 'string' },
     },
   },
   bookPreviewBody: {

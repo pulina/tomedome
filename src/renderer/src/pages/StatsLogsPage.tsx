@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CostPrices, LlmCall, LlmStatRow, LogLevel, StatsPayload } from '@shared/types';
+import {
+  LLM_CALL_PURPOSES,
+  type CostPrices,
+  type LlmCall,
+  type LlmCallPurpose,
+  type LlmStatRow,
+  type LogLevel,
+  type StatsPayload,
+} from '@shared/types';
 import { logsApi } from '../api/chat-api';
 import { statsApi } from '../api/stats-api';
 import { useInspector } from '../hooks/useInspector';
@@ -18,25 +26,43 @@ interface AppLogRow {
 
 export function StatsLogsPage() {
   const [tab, setTab] = useState<Tab>('stats');
-  const [level, setLevel] = useState<LogLevel>('debug');
+  const [appLevelPicked, setAppLevelPicked] = useState<Set<LogLevel>>(() => new Set(LEVELS));
   const [appLog, setAppLog] = useState<AppLogRow[]>([]);
   const [llmCalls, setLlmCalls] = useState<LlmCall[]>([]);
   const [loading, setLoading] = useState(false);
+  const [llmPurposePicked, setLlmPurposePicked] = useState<Set<LlmCallPurpose>>(
+    () => new Set(LLM_CALL_PURPOSES),
+  );
+
+  const llmPurposeQueryKey = [...llmPurposePicked].sort().join('\0');
+  const appLevelQueryKey = [...appLevelPicked].sort().join('\0');
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       if (tab === 'app') {
-        const rows = (await logsApi.app(level, 500)) as unknown as AppLogRow[];
+        if (appLevelPicked.size === 0) {
+          setAppLog([]);
+          return;
+        }
+        const levels =
+          appLevelPicked.size === LEVELS.length ? undefined : [...appLevelPicked];
+        const rows = (await logsApi.app(levels, 500)) as unknown as AppLogRow[];
         setAppLog(rows);
       } else if (tab === 'llm') {
-        const rows = await logsApi.llm(200);
+        if (llmPurposePicked.size === 0) {
+          setLlmCalls([]);
+          return;
+        }
+        const purposes =
+          llmPurposePicked.size === LLM_CALL_PURPOSES.length ? undefined : [...llmPurposePicked];
+        const rows = await logsApi.llm(200, purposes);
         setLlmCalls(rows);
       }
     } finally {
       setLoading(false);
     }
-  }, [tab, level]);
+  }, [tab, appLevelQueryKey, llmPurposeQueryKey]);
 
   useEffect(() => {
     void refresh();
@@ -55,14 +81,20 @@ export function StatsLogsPage() {
         <button
           type="button"
           className={`${styles.tab} ${tab === 'llm' ? styles.tabActive : ''}`}
-          onClick={() => setTab('llm')}
+          onClick={() => {
+            if (tab !== 'llm') setLlmPurposePicked(new Set(LLM_CALL_PURPOSES));
+            setTab('llm');
+          }}
         >
           LLM Calls
         </button>
         <button
           type="button"
           className={`${styles.tab} ${tab === 'app' ? styles.tabActive : ''}`}
-          onClick={() => setTab('app')}
+          onClick={() => {
+            if (tab !== 'app') setAppLevelPicked(new Set(LEVELS));
+            setTab('app');
+          }}
         >
           App Log
         </button>
@@ -71,20 +103,34 @@ export function StatsLogsPage() {
       {tab !== 'stats' && (
         <div className={styles.toolbar}>
           {tab === 'app' && (
-            <label>
-              level
-              <select
-                className={styles.select}
-                value={level}
-                onChange={(e) => setLevel(e.target.value as LogLevel)}
-              >
-                {LEVELS.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <AppLevelFilter
+              picked={appLevelPicked}
+              onMarkAll={() => setAppLevelPicked(new Set(LEVELS))}
+              onUnmarkAll={() => setAppLevelPicked(new Set())}
+              onToggleLevel={(l) => {
+                setAppLevelPicked((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(l)) next.delete(l);
+                  else next.add(l);
+                  return next;
+                });
+              }}
+            />
+          )}
+          {tab === 'llm' && (
+            <LlmPurposeFilter
+              picked={llmPurposePicked}
+              onMarkAll={() => setLlmPurposePicked(new Set(LLM_CALL_PURPOSES))}
+              onUnmarkAll={() => setLlmPurposePicked(new Set())}
+              onTogglePurpose={(p) => {
+                setLlmPurposePicked((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(p)) next.delete(p);
+                  else next.add(p);
+                  return next;
+                });
+              }}
+            />
           )}
           <span>{loading ? 'loading…' : ''}</span>
           <button type="button" className={styles.refreshBtn} onClick={() => void refresh()}>
@@ -94,30 +140,111 @@ export function StatsLogsPage() {
       )}
 
       <div className={styles.list}>
-        {tab === 'app' && <AppLogList rows={appLog} />}
-        {tab === 'llm' && <LlmCallList rows={llmCalls} />}
+        {tab === 'app' && (
+          <AppLogList rows={appLog} noLevelSelected={appLevelPicked.size === 0} />
+        )}
+        {tab === 'llm' && (
+          <LlmCallList rows={llmCalls} noPurposeSelected={llmPurposePicked.size === 0} />
+        )}
         {tab === 'stats' && <StatsPanel />}
       </div>
     </div>
   );
 }
 
+// ── App log level filter (same chrome as LLM purpose filter) ──────────────────
+
+function AppLevelFilter(props: {
+  picked: Set<LogLevel>;
+  onMarkAll: () => void;
+  onUnmarkAll: () => void;
+  onToggleLevel: (l: LogLevel) => void;
+}) {
+  const { picked, onMarkAll, onUnmarkAll, onToggleLevel } = props;
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!el.open) return;
+      const t = e.target as Node;
+      if (el.contains(t)) return;
+      el.open = false;
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, []);
+
+  const everySelected = picked.size === LEVELS.length;
+  const summary =
+    picked.size === 0
+      ? 'None selected'
+      : everySelected
+        ? 'All types'
+        : picked.size === 1
+          ? [...picked][0]
+          : `${picked.size} types`;
+
+  return (
+    <details ref={detailsRef} className={styles.purposeFilter}>
+      <summary className={styles.purposeFilterSummary} title="Filter by log level">
+        level: <span className={styles.purposeFilterValue}>{summary}</span>
+      </summary>
+      <div className={styles.purposeFilterBody} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.purposeFilterActions}>
+          <button
+            type="button"
+            className={styles.purposeFilterBulkBtn}
+            onClick={everySelected ? onUnmarkAll : onMarkAll}
+          >
+            {everySelected ? 'Unmark all' : 'Mark all'}
+          </button>
+        </div>
+        <div className={styles.purposeFilterDivider} />
+        {LEVELS.map((l) => (
+          <label key={l} className={styles.purposeFilterRow}>
+            <input
+              type="checkbox"
+              checked={picked.has(l)}
+              onChange={() => onToggleLevel(l)}
+            />
+            <span>{l}</span>
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 // ── App log ───────────────────────────────────────────────────────────────────
 
-function AppLogList({ rows }: { rows: AppLogRow[] }) {
-  if (rows.length === 0) return <div className={styles.empty}>No log entries.</div>;
+function AppLogList({ rows, noLevelSelected }: { rows: AppLogRow[]; noLevelSelected: boolean }) {
   return (
     <>
-      {rows.map((r, i) => (
-        <div key={i} className={styles.row}>
-          <div className={styles.time}>{formatTime(r.time)}</div>
-          <div className={`${styles.level} ${levelClass(r.level)}`}>{r.level}</div>
-          <div>
-            <div className={styles.msg}>{r.msg}</div>
-            <MetaLine row={r} />
-          </div>
+      <div className={`${styles.row} ${styles.logHeader}`}>
+        <div title="When the line was written (local time)">Time</div>
+        <div title="Log severity">Level</div>
+        <div title="Main message and optional structured fields below">Message</div>
+      </div>
+      {rows.length === 0 ? (
+        <div className={styles.empty}>
+          {noLevelSelected
+            ? 'No level selected — choose levels or Mark all.'
+            : 'No log entries.'}
         </div>
-      ))}
+      ) : (
+        rows.map((r, i) => (
+          <div key={i} className={styles.row}>
+            <div className={styles.time}>{formatTime(r.time)}</div>
+            <div className={`${styles.level} ${levelClass(r.level)}`}>{r.level}</div>
+            <div>
+              <div className={styles.msg}>{r.msg}</div>
+              <MetaLine row={r} />
+            </div>
+          </div>
+        ))
+      )}
     </>
   );
 }
@@ -144,38 +271,137 @@ function formatMetaValue(v: unknown): string {
   }
 }
 
+// ── LLM purpose filter ────────────────────────────────────────────────────────
+
+function LlmPurposeFilter(props: {
+  picked: Set<LlmCallPurpose>;
+  onMarkAll: () => void;
+  onUnmarkAll: () => void;
+  onTogglePurpose: (p: LlmCallPurpose) => void;
+}) {
+  const { picked, onMarkAll, onUnmarkAll, onTogglePurpose } = props;
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!el.open) return;
+      const t = e.target as Node;
+      if (el.contains(t)) return;
+      el.open = false;
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, []);
+
+  const everySelected = picked.size === LLM_CALL_PURPOSES.length;
+  const summary =
+    picked.size === 0
+      ? 'None selected'
+      : everySelected
+        ? 'All types'
+        : picked.size === 1
+          ? [...picked][0]
+          : `${picked.size} types`;
+
+  return (
+    <details ref={detailsRef} className={styles.purposeFilter}>
+      <summary className={styles.purposeFilterSummary} title="Filter by call purpose">
+        purpose: <span className={styles.purposeFilterValue}>{summary}</span>
+      </summary>
+      <div className={styles.purposeFilterBody} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.purposeFilterActions}>
+          <button
+            type="button"
+            className={styles.purposeFilterBulkBtn}
+            onClick={everySelected ? onUnmarkAll : onMarkAll}
+          >
+            {everySelected ? 'Unmark all' : 'Mark all'}
+          </button>
+        </div>
+        <div className={styles.purposeFilterDivider} />
+        {LLM_CALL_PURPOSES.map((p) => (
+          <label key={p} className={styles.purposeFilterRow}>
+            <input
+              type="checkbox"
+              checked={picked.has(p)}
+              onChange={() => onTogglePurpose(p)}
+            />
+            <span>{p}</span>
+          </label>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 // ── LLM call list ─────────────────────────────────────────────────────────────
 
-function LlmCallList({ rows }: { rows: LlmCall[] }) {
+function LlmCallList({ rows, noPurposeSelected }: { rows: LlmCall[]; noPurposeSelected: boolean }) {
   const { openInspector } = useInspector();
-  if (rows.length === 0) return <div className={styles.empty}>No LLM calls logged.</div>;
   return (
     <>
-      {rows.map((c) => (
-        <div
-          key={c.id}
-          className={styles.llmRow}
-          onClick={() => openInspector(c.id)}
-          title="Click to inspect"
-        >
-          <div className={styles.time}>{formatTime(Date.parse(c.createdAt))}</div>
-          <div
-            className={c.purpose === 'chat' ? styles.llmPurposeChat : styles.llmPurposeTitle}
-          >
-            {c.purpose}
-          </div>
-          <div className={styles.msg}>
-            <div>
-              {c.provider} / {c.model}
-            </div>
-            {c.error && <div className={styles.llmErr}>{c.error}</div>}
-          </div>
-          <div>{c.promptTokens ?? '—'}p</div>
-          <div>{c.completionTokens ?? '—'}c</div>
-          <div>{c.latencyMs != null ? `${c.latencyMs} ms` : '—'}</div>
-          <span className={styles.inspectDot} title="Inspect">◈</span>
+      <div className={`${styles.llmRow} ${styles.logHeader}`}>
+        <div title="When the call was logged (local time)">Time</div>
+        <div title="What kind of provider call this was">Purpose</div>
+        <div title="LLM provider and model id">Provider / model</div>
+        <div className={styles.tdRight} title="Prompt / input tokens (when the provider reports them)">
+          Prompt
+          <span className={styles.logHeaderSub}>[tokens]</span>
         </div>
-      ))}
+        <div className={styles.tdRight} title="Completion / output tokens (when the provider reports them)">
+          Output
+          <span className={styles.logHeaderSub}>[tokens]</span>
+        </div>
+        <div className={styles.tdRight} title="Round-trip time for this call">
+          Latency
+        </div>
+        <span className={`${styles.tdRight} ${styles.logHeaderView}`} title="Open full request & response">
+          View
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <div className={styles.empty}>
+          {noPurposeSelected
+            ? 'No purpose selected — choose types or Mark all.'
+            : 'No LLM calls logged.'}
+        </div>
+      ) : (
+        rows.map((c) => (
+          <div
+            key={c.id}
+            className={styles.llmRow}
+            onClick={() => openInspector(c.id)}
+            title="Click to inspect"
+          >
+            <div className={styles.time}>{formatTime(Date.parse(c.createdAt))}</div>
+            <div
+              className={c.purpose === 'chat' ? styles.llmPurposeChat : styles.llmPurposeTitle}
+            >
+              {c.purpose}
+            </div>
+            <div className={styles.msg}>
+              <div>
+                {c.provider} / {c.model}
+              </div>
+              {c.error && <div className={styles.llmErr}>{c.error}</div>}
+            </div>
+            <div className={styles.tdRight} title="Prompt tokens">
+              {c.promptTokens ?? '—'}
+            </div>
+            <div className={styles.tdRight} title="Output tokens">
+              {c.completionTokens ?? '—'}
+            </div>
+            <div className={styles.tdRight} title="Latency">
+              {c.latencyMs != null ? `${c.latencyMs} ms` : '—'}
+            </div>
+            <span className={`${styles.tdRight} ${styles.inspectDot}`} title="Inspect">
+              ◈
+            </span>
+          </div>
+        ))
+      )}
     </>
   );
 }

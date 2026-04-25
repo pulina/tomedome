@@ -1,6 +1,6 @@
 import { getLogger } from '../lib/logger';
 import { getApiKeyPlaintext, getLlmConfig } from './config-service';
-import { finaliseLlmCall, insertLlmCall } from './llm-call-log';
+import { patchLlmCallError } from './llm-call-log';
 import { getAdapter, ThinkFilter, stripThinkBlocks } from '../llm';
 import type { LlmCallPurpose } from '@shared/types';
 import type { AgentMessage, ToolDefinition, ToolCall } from '../llm/types';
@@ -55,47 +55,38 @@ export async function generateStructured<T>(opts: GenerateOptions): Promise<T> {
   const maxTokens = opts.maxTokens ?? 2048;
 
   if (adapter.generateJson) {
-    const llmCallId = insertLlmCall({
-      chatId: null,
-      purpose,
-      provider: cfg.provider,
-      model: cfg.model,
-      requestJson: JSON.stringify({ model: cfg.model, schemaName: opts.schemaName, messages: opts.messages }),
-    });
-    const started = Date.now();
+    let llmCallId: string | undefined;
     let raw: string | undefined;
-    let errorMsg: string | null = null;
-
     try {
-      raw = await adapter.generateJson({
+      const gen = await adapter.generateJson({
         messages: opts.messages,
         model: cfg.model,
         maxTokens,
         schemaName: opts.schemaName,
         schema: opts.schema,
         signal: opts.abortSignal,
+        llmLog: { chatId: null, purpose },
       });
+      raw = gen.content;
+      llmCallId = gen.llmCallId;
       log.debug({ rawLength: raw.length }, 'generateJson raw response');
     } catch (err) {
-      errorMsg = err instanceof Error ? err.message : String(err);
       log.error({ err }, 'generateJson failed');
-      finaliseLlmCall(llmCallId, { responseText: null, promptTokens: null, completionTokens: null, latencyMs: Date.now() - started, error: errorMsg });
       throw err;
     }
 
     try {
-      const parsed = JSON.parse(raw) as T;
-      finaliseLlmCall(llmCallId, { responseText: raw, promptTokens: null, completionTokens: null, latencyMs: Date.now() - started, error: null });
-      return parsed;
+      return JSON.parse(raw!) as T;
     } catch (err) {
-      errorMsg = `JSON parse failed: ${(err as Error).message}`;
-      log.error({ raw: raw.slice(0, 500), err }, 'generateJson JSON parse failed');
-      finaliseLlmCall(llmCallId, { responseText: raw, promptTokens: null, completionTokens: null, latencyMs: Date.now() - started, error: errorMsg });
-      throw new Error(`Failed to parse structured response: ${(err as Error).message}. Raw (first 500 chars): ${raw.slice(0, 500)}`);
+      const errorMsg = `JSON parse failed: ${(err as Error).message}`;
+      log.error({ raw: raw!.slice(0, 500), err }, 'generateJson JSON parse failed');
+      if (llmCallId) patchLlmCallError(llmCallId, errorMsg);
+      throw new Error(
+        `Failed to parse structured response: ${(err as Error).message}. Raw (first 500 chars): ${raw!.slice(0, 500)}`,
+      );
     }
   }
 
-  // Fallback: stream and extract JSON from the response text (streamChat logs its own call)
   const result = await streamChat({
     messages: opts.messages,
     chatId: null,
@@ -119,63 +110,36 @@ export async function generateStructured<T>(opts: GenerateOptions): Promise<T> {
 
 /**
  * Runs a streaming LLM completion against the currently-configured provider.
- * Handles logging, think-block filtering, and error normalisation.
- * The caller only sees clean text — provider differences are inside the adapter.
+ * Handles think-block filtering, error normalisation, and provider call logging (adapter wrapper).
  */
 export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   const cfg = getLlmConfig();
   if (!cfg.provider) throw new Error('LLM not configured');
 
   const model = cfg.model;
-  const provider = cfg.provider;
   const adapter = getAdapter(cfg, getApiKeyPlaintext());
 
-  const llmCallId = insertLlmCall({
-    chatId: opts.chatId,
-    purpose: opts.purpose,
-    provider,
-    model,
-    requestJson: JSON.stringify({ model, messages: opts.messages }),
-  });
-  const started = Date.now();
-  const log = getLogger().child({ module: 'llm-client', provider, llmCallId });
-
-  // Wrap onToken with a think-block filter so <think>…</think> reasoning
-  // sections are stripped from the live token stream sent to the frontend.
   const thinkFilter = opts.onToken ? new ThinkFilter(opts.onToken) : null;
   const onToken = thinkFilter ? (chunk: string) => thinkFilter.push(chunk) : undefined;
 
-  let text = '';
-  let promptTokens: number | null = null;
-  let completionTokens: number | null = null;
-  let errorMsg: string | null = null;
-
-  try {
-    ({ text, promptTokens, completionTokens } = await adapter.stream({
-      messages: opts.messages,
-      model,
-      maxTokens: opts.maxTokens ?? 2048,
-      onToken,
-      signal: opts.abortSignal,
-    }));
-    thinkFilter?.flush();
-    // Strip any think blocks the streaming filter may have missed
-    // (e.g. stream ended before </think>, or tag straddled a chunk boundary edge case).
-    text = stripThinkBlocks(text);
-  } catch (err) {
-    const aborted =
-      err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted'));
-    errorMsg = aborted ? 'aborted' : err instanceof Error ? err.message : String(err);
-    if (!aborted) log.warn({ errorMsg }, 'llm stream ended with error');
-  }
-
-  finaliseLlmCall(llmCallId, {
-    responseText: text || null,
-    promptTokens,
-    completionTokens,
-    latencyMs: Date.now() - started,
-    error: errorMsg,
+  const r = await adapter.stream({
+    messages: opts.messages,
+    model,
+    maxTokens: opts.maxTokens ?? 2048,
+    onToken,
+    signal: opts.abortSignal,
+    llmLog: { chatId: opts.chatId, purpose: opts.purpose },
   });
+
+  thinkFilter?.flush();
+
+  const llmCallId = r.llmCallId;
+  if (!llmCallId) throw new Error('stream missing llmCallId (logging adapter not applied?)');
+
+  const errorMsg: string | null = null;
+  const text = stripThinkBlocks(r.text);
+  const promptTokens = r.promptTokens;
+  const completionTokens = r.completionTokens;
 
   return { llmCallId, text, promptTokens, completionTokens, error: errorMsg };
 }
@@ -215,52 +179,27 @@ export async function resolveToolCalls(opts: {
   for (let round = 0; round < maxRounds; round++) {
     if (abortSignal?.aborted) return null;
 
-    const llmCallId = insertLlmCall({
-      chatId: opts.chatId ?? null,
-      purpose: 'chat',
-      provider: cfg.provider,
+    const result = await adapter.call({
+      messages,
       model: cfg.model,
-      requestJson: JSON.stringify({ model: cfg.model, round, messages }),
+      maxTokens: 2048,
+      tools,
+      signal: abortSignal,
+      llmLog: { chatId: opts.chatId ?? null, purpose: 'chat', toolRound: round },
     });
-    const started = Date.now();
 
-    let result: Awaited<ReturnType<NonNullable<typeof adapter.call>>>;
-    try {
-      result = await adapter.call({
-        messages,
-        model: cfg.model,
-        maxTokens: 2048,
-        tools,
-        signal: abortSignal,
-      });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      finaliseLlmCall(llmCallId, { responseText: null, promptTokens: null, completionTokens: null, latencyMs: Date.now() - started, error: errorMsg });
-      throw err;
-    }
-
-    finaliseLlmCall(llmCallId, {
-      responseText: result.text ?? null,
-      promptTokens: result.promptTokens ?? null,
-      completionTokens: result.completionTokens ?? null,
-      latencyMs: Date.now() - started,
-      error: null,
-    });
-    lastLlmCallId = llmCallId;
+    lastLlmCallId = result.llmCallId ?? lastLlmCallId;
     lastPromptTokens = result.promptTokens ?? null;
 
     if (result.toolCalls.length === 0) {
-      // No tool calls — final answer in result.text
       messages.push({ role: 'assistant', content: result.text ?? '', toolCalls: [] });
-      return { text: result.text ?? '', messages, llmCallId, promptTokens: lastPromptTokens };
+      return { text: result.text ?? '', messages, llmCallId: lastLlmCallId, promptTokens: lastPromptTokens };
     }
 
     log.debug({ round, tools: result.toolCalls.map((t: ToolCall) => t.name) }, 'tool calls requested');
 
-    // Add the assistant message with tool calls to history
     messages.push({ role: 'assistant', content: result.text, toolCalls: result.toolCalls });
 
-    // Execute each tool call
     for (const tc of result.toolCalls) {
       if (abortSignal?.aborted) return null;
       onToolCall?.(tc.name, tc.arguments);
@@ -274,7 +213,6 @@ export async function resolveToolCalls(opts: {
     }
   }
 
-  // Exceeded max rounds — return what we have (last assistant text if any)
   const lastAssistant = [...messages].reverse().find((m): m is Extract<AgentMessage, { role: 'assistant' }> => m.role === 'assistant');
   return { text: lastAssistant?.content ?? '', messages, llmCallId: lastLlmCallId, promptTokens: lastPromptTokens };
 }

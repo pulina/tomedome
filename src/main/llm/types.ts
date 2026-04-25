@@ -1,8 +1,18 @@
+import type { LlmCallPurpose } from '@shared/types';
+
 export type MessageRole = 'system' | 'user' | 'assistant';
 
 export interface Message {
   role: MessageRole;
   content: string;
+}
+
+/** Optional metadata for `insertLlmCall` when the adapter is wrapped with request logging. */
+export interface LlmAdapterCallContext {
+  chatId: string | null;
+  purpose: LlmCallPurpose;
+  /** Tool-calling loop round when `purpose` is `chat`. */
+  toolRound?: number;
 }
 
 export interface AdapterStreamOptions {
@@ -11,12 +21,15 @@ export interface AdapterStreamOptions {
   maxTokens: number;
   onToken?: (chunk: string) => void;
   signal?: AbortSignal;
+  llmLog?: LlmAdapterCallContext;
 }
 
 export interface AdapterResult {
   text: string;
   promptTokens: number | null;
   completionTokens: number | null;
+  /** Set by the logging adapter after a logged provider stream. */
+  llmCallId?: string;
 }
 
 export interface AdapterGenerateOptions {
@@ -28,6 +41,13 @@ export interface AdapterGenerateOptions {
   /** JSON Schema object that constrains the response shape. */
   schema: Record<string, unknown>;
   signal?: AbortSignal;
+  llmLog?: LlmAdapterCallContext;
+}
+
+/** Structured JSON generation result; `llmCallId` is set when using the logging-wrapped adapter. */
+export interface StructuredGenerateJsonResult {
+  content: string;
+  llmCallId?: string;
 }
 
 // ── Tool-calling types ────────────────────────────────────────────────────────
@@ -57,6 +77,7 @@ export interface AdapterCallOptions {
   maxTokens: number;
   tools?: ToolDefinition[];
   signal?: AbortSignal;
+  llmLog?: LlmAdapterCallContext;
 }
 
 export interface CallResult {
@@ -65,6 +86,7 @@ export interface CallResult {
   toolCalls: ToolCall[];
   promptTokens: number | null;
   completionTokens: number | null;
+  llmCallId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,7 +98,7 @@ export interface LlmAdapter {
    * provider and returns the raw JSON string. Optional — providers that don't
    * support it are handled by the fallback path in generateStructured().
    */
-  generateJson?(opts: AdapterGenerateOptions): Promise<string>;
+  generateJson?(opts: AdapterGenerateOptions): Promise<StructuredGenerateJsonResult>;
   /** Batch-embed texts. Throws if this provider does not support embeddings. */
   embed?(texts: string[], model: string, signal?: AbortSignal): Promise<number[][]>;
   /**

@@ -2,7 +2,16 @@
  * Adapter for any OpenAI-compatible chat completions endpoint.
  * Covers: OpenAI, OpenRouter, LM Studio — same wire format, different URL + auth.
  */
-import type { LlmAdapter, AdapterStreamOptions, AdapterResult, AdapterGenerateOptions, AdapterCallOptions, CallResult } from '../types';
+import type {
+  LlmAdapter,
+  AdapterStreamOptions,
+  AdapterResult,
+  AdapterGenerateOptions,
+  AdapterCallOptions,
+  CallResult,
+  StructuredGenerateJsonResult,
+} from '../types';
+import { GenerateJsonTruncatedError } from '../generate-json-truncated-error';
 import { getLogger } from '../../lib/logger';
 import { withUserAgent } from '../user-agent';
 import { readStream, safeText, SseParser } from '../wire';
@@ -50,7 +59,7 @@ export class OpenAICompatAdapter implements LlmAdapter {
     return json.data.map((d) => d.embedding);
   }
 
-  async generateJson(opts: AdapterGenerateOptions): Promise<string> {
+  async generateJson(opts: AdapterGenerateOptions): Promise<StructuredGenerateJsonResult> {
     const url = `${this.baseUrl.replace(/\/$/, '')}/v1/chat/completions`;
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
@@ -70,14 +79,17 @@ export class OpenAICompatAdapter implements LlmAdapter {
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await safeText(res)}`);
-    const json = await res.json() as { choices: Array<{ message: { content: string }; finish_reason: string }> };
+    const json = await res.json() as {
+      choices: Array<{ message: { content?: string | null }; finish_reason?: string }>;
+    };
     const choice = json.choices[0];
     if (choice?.finish_reason === 'length') {
-      throw new Error(`generateJson truncated: model hit max_tokens (${opts.maxTokens}) — increase maxTokens or reduce input`);
+      const partial = choice?.message?.content ?? null;
+      throw new GenerateJsonTruncatedError(opts.maxTokens, partial);
     }
     const content = choice?.message?.content;
     if (content == null) throw new Error('No content in generateJson response');
-    return content;
+    return { content };
   }
 
   async call(opts: AdapterCallOptions): Promise<CallResult> {

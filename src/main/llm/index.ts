@@ -10,13 +10,27 @@
 import { LlmProvider, DEFAULT_OLLAMA_URL, DEFAULT_LMSTUDIO_URL } from '@shared/types';
 import type { LlmConfig } from '@shared/types';
 import type { LlmAdapter } from './types';
+import { wrapLlmAdapterWithCallLogging } from './logging-adapter';
 import { AnthropicAdapter } from './adapters/anthropic';
 import { OpenAICompatAdapter } from './adapters/openai-compat';
 import { OpenRouterAdapter } from './adapters/openrouter';
 import { LmStudioAdapter } from './adapters/lmstudio';
 import { OllamaAdapter } from './adapters/ollama';
 
-export type { LlmAdapter, AdapterStreamOptions, AdapterResult, Message, MessageRole, ToolDefinition, ToolCall, AgentMessage, AdapterCallOptions, CallResult } from './types';
+export type {
+  LlmAdapter,
+  AdapterStreamOptions,
+  AdapterResult,
+  Message,
+  MessageRole,
+  ToolDefinition,
+  ToolCall,
+  AgentMessage,
+  AdapterCallOptions,
+  CallResult,
+  StructuredGenerateJsonResult,
+  LlmAdapterCallContext,
+} from './types';
 export { ThinkFilter, stripThinkBlocks } from './postprocess';
 
 export function getAdapter(cfg: LlmConfig, apiKey: string): LlmAdapter {
@@ -43,23 +57,30 @@ export function getAdapterForProvider(
   opts: AdapterProviderOpts = {},
 ): LlmAdapter {
   const key = opts.apiKey ?? '';
+  let inner: LlmAdapter;
   switch (provider) {
     case LlmProvider.Anthropic:
-      return new AnthropicAdapter(key);
+      inner = new AnthropicAdapter(key);
+      break;
 
     case LlmProvider.OpenAI:
-      return new OpenAICompatAdapter('https://api.openai.com', key);
+      inner = new OpenAICompatAdapter('https://api.openai.com', key);
+      break;
 
     case LlmProvider.OpenRouter:
-      return new OpenRouterAdapter('https://openrouter.ai/api', key);
+      inner = new OpenRouterAdapter('https://openrouter.ai/api', key);
+      break;
 
     case LlmProvider.LmStudio:
-      return new LmStudioAdapter(opts.lmStudioBaseUrl || DEFAULT_LMSTUDIO_URL, key);
+      inner = new LmStudioAdapter(opts.lmStudioBaseUrl || DEFAULT_LMSTUDIO_URL, key);
+      break;
 
     case LlmProvider.Ollama:
-      return new OllamaAdapter(opts.ollamaBaseUrl || DEFAULT_OLLAMA_URL);
+      inner = new OllamaAdapter(opts.ollamaBaseUrl || DEFAULT_OLLAMA_URL);
+      break;
 
     default:
       throw new Error(`No adapter for provider: ${String(provider)}`);
   }
+  return wrapLlmAdapterWithCallLogging(inner, String(provider));
 }

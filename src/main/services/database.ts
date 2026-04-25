@@ -64,6 +64,22 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_llm_calls_created ON llm_calls(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_llm_calls_chat ON llm_calls(chat_id);
 
+    CREATE TABLE IF NOT EXISTS llm_stats_archive (
+      scope TEXT NOT NULL,                -- 'purpose' | 'model'
+      key TEXT NOT NULL,
+      sub_key TEXT NOT NULL DEFAULT '',
+      calls INTEGER NOT NULL DEFAULT 0,
+      errors INTEGER NOT NULL DEFAULT 0,
+      prompt_tokens INTEGER NOT NULL DEFAULT 0,
+      completion_tokens INTEGER NOT NULL DEFAULT 0,
+      latency_sum INTEGER NOT NULL DEFAULT 0,
+      latency_count INTEGER NOT NULL DEFAULT 0,
+      min_latency_ms INTEGER,
+      max_latency_ms INTEGER,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (scope, key, sub_key)
+    );
+
     CREATE TABLE IF NOT EXISTS series (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -221,9 +237,9 @@ export function getDb(): Database.Database {
   `);
 
   // Schema version — bump when structural migrations are added
-  db.prepare('INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)').run(CONFIG_KEY.schemaVersion, '2');
-  db.prepare('UPDATE config SET value=? WHERE key=? AND CAST(value AS INTEGER) < 2').run(
-    '2',
+  db.prepare('INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)').run(CONFIG_KEY.schemaVersion, '3');
+  db.prepare('UPDATE config SET value=? WHERE key=? AND CAST(value AS INTEGER) < 3').run(
+    '3',
     CONFIG_KEY.schemaVersion,
   );
 
@@ -243,6 +259,7 @@ export function clearAllData(): void {
   const db = getDb();
   db.transaction(() => {
     db.prepare('DELETE FROM llm_calls').run();
+    db.prepare('DELETE FROM llm_stats_archive').run();
     db.prepare('DELETE FROM jobs').run();
     db.prepare('DELETE FROM chats').run();
     db.prepare('DELETE FROM books').run();

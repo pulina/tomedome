@@ -1,8 +1,8 @@
 import { app } from 'electron';
 import { createReadStream, promises as fs } from 'fs';
 import { join } from 'path';
-import { getDb } from './database';
 import { AppLogEntry, LogLevel } from '@shared/types';
+import { archiveAndClearLlmCallsForStats } from './stats-service';
 
 const LEVEL_VALUES: Record<LogLevel, number> = {
   trace: 10,
@@ -33,7 +33,10 @@ function numericToLevel(n: number): LogLevel {
  * returns an empty array.
  */
 export async function readAppLog(opts: {
+  /** Minimum level when `levels` is not set. */
   level?: LogLevel;
+  /** Exact levels to include; empty array returns []. When set, `level` is ignored. */
+  levels?: LogLevel[];
   limit?: number;
 } = {}): Promise<AppLogEntry[]> {
   const path = logFilePath();
@@ -60,8 +63,14 @@ export async function readAppLog(opts: {
   // started at byte 0.
   const lines = text.split('\n');
   const usable = start === 0 ? lines : lines.slice(1);
-  const minLevel = LEVEL_VALUES[opts.level ?? 'debug'];
   const limit = Math.max(1, Math.min(opts.limit ?? 500, 2000));
+  const levelsList = opts.levels;
+  const levelsMode = levelsList !== undefined;
+  if (levelsMode && levelsList.length === 0) return [];
+
+  const allowed = levelsMode ? new Set(levelsList) : null;
+  const minLevel =
+    !levelsMode && opts.level !== undefined ? LEVEL_VALUES[opts.level] : null;
 
   const entries: AppLogEntry[] = [];
   for (const line of usable) {
@@ -70,10 +79,15 @@ export async function readAppLog(opts: {
     try {
       const obj = JSON.parse(trimmed);
       const numericLevel = typeof obj.level === 'number' ? obj.level : 30;
-      if (numericLevel < minLevel) continue;
+      const lineLevel = numericToLevel(numericLevel);
+      if (allowed) {
+        if (!allowed.has(lineLevel)) continue;
+      } else if (minLevel != null) {
+        if (numericLevel < minLevel) continue;
+      }
       entries.push({
         ...obj,
-        level: numericToLevel(numericLevel),
+        level: lineLevel,
         time: typeof obj.time === 'number' ? obj.time : Date.now(),
         msg: typeof obj.msg === 'string' ? obj.msg : '',
       });
@@ -91,5 +105,5 @@ export async function clearLogs(): Promise<void> {
   await fs.writeFile(logFilePath(), '', 'utf8').catch(() => {
     // File may not exist yet — that's fine
   });
-  getDb().prepare('DELETE FROM llm_calls').run();
+  archiveAndClearLlmCallsForStats();
 }

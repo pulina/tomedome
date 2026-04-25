@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { LlmCall, LlmCallPurpose } from '@shared/types';
+import { LlmCall, LlmCallPurpose, LLM_CALL_PURPOSES } from '@shared/types';
 import { getDb } from './database';
 
 interface LlmCallRow {
@@ -72,6 +72,11 @@ export function finaliseLlmCall(id: string, u: FinaliseLlmCall): void {
     .run(u.responseText, u.promptTokens, u.completionTokens, u.latencyMs, u.error, id);
 }
 
+/** Append-only error update (e.g. JSON parse failed after a successful provider body was logged). */
+export function patchLlmCallError(id: string, error: string): void {
+  getDb().prepare(`UPDATE llm_calls SET error = ? WHERE id = ?`).run(error, id);
+}
+
 export function getLlmCall(id: string): LlmCall | null {
   const row = getDb().prepare(`SELECT * FROM llm_calls WHERE id = ?`).get(id) as
     | LlmCallRow
@@ -79,21 +84,36 @@ export function getLlmCall(id: string): LlmCall | null {
   return row ? rowToCall(row) : null;
 }
 
+const PURPOSE_ALLOW = new Set<string>(LLM_CALL_PURPOSES);
+
 export interface LlmCallsQuery {
   chatId?: string;
   limit?: number;
+  /** When set, only rows whose `purpose` is in this set (most recent first, still capped by `limit`). */
+  purposes?: LlmCallPurpose[];
 }
 
 export function listLlmCalls(q: LlmCallsQuery = {}): LlmCall[] {
   const limit = Math.max(1, Math.min(q.limit ?? 200, 2000));
+  const purposes = (q.purposes ?? []).filter((p): p is LlmCallPurpose => PURPOSE_ALLOW.has(p));
+  if (q.purposes !== undefined && purposes.length === 0) return [];
+  const purposeIn =
+    purposes.length > 0 ? ` AND purpose IN (${purposes.map(() => '?').join(',')})` : '';
+
   if (q.chatId) {
     const rows = getDb()
-      .prepare(`SELECT * FROM llm_calls WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?`)
-      .all(q.chatId, limit) as LlmCallRow[];
+      .prepare(
+        `SELECT * FROM llm_calls WHERE chat_id = ?${purposeIn} ORDER BY created_at DESC LIMIT ?`,
+      )
+      .all(q.chatId, ...purposes, limit) as LlmCallRow[];
     return rows.map(rowToCall);
   }
   const rows = getDb()
-    .prepare(`SELECT * FROM llm_calls ORDER BY created_at DESC LIMIT ?`)
-    .all(limit) as LlmCallRow[];
+    .prepare(
+      purposes.length > 0
+        ? `SELECT * FROM llm_calls WHERE 1=1${purposeIn} ORDER BY created_at DESC LIMIT ?`
+        : `SELECT * FROM llm_calls ORDER BY created_at DESC LIMIT ?`,
+    )
+    .all(...(purposes.length > 0 ? [...purposes, limit] : [limit])) as LlmCallRow[];
   return rows.map(rowToCall);
 }

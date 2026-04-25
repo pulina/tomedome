@@ -1,4 +1,11 @@
-import type { LlmAdapter, AdapterStreamOptions, AdapterResult, AdapterGenerateOptions } from '../types';
+import type {
+  LlmAdapter,
+  AdapterStreamOptions,
+  AdapterResult,
+  AdapterGenerateOptions,
+  StructuredGenerateJsonResult,
+} from '../types';
+import { GenerateJsonTruncatedError } from '../generate-json-truncated-error';
 import { getLogger } from '../../lib/logger';
 import { withUserAgent } from '../user-agent';
 import { readStream, safeText } from '../wire';
@@ -70,7 +77,7 @@ export class OllamaAdapter implements LlmAdapter {
     return scores;
   }
 
-  async generateJson(opts: AdapterGenerateOptions): Promise<string> {
+  async generateJson(opts: AdapterGenerateOptions): Promise<StructuredGenerateJsonResult> {
     const url = `${this.baseUrl.replace(/\/$/, '')}/api/chat`;
     const res = await fetch(url, {
       method: 'POST',
@@ -84,11 +91,14 @@ export class OllamaAdapter implements LlmAdapter {
       }),
     });
     if (!res.ok) throw new Error(`Ollama HTTP ${res.status}: ${await safeText(res)}`);
-    const json = await res.json() as { message: { content: string }; done_reason?: string };
+    const json = await res.json() as { message?: { content?: string | null }; done_reason?: string };
     if (json.done_reason === 'length') {
-      throw new Error(`generateJson truncated: model hit max_tokens (${opts.maxTokens}) — increase maxTokens or reduce input`);
+      const partial = json.message?.content ?? null;
+      throw new GenerateJsonTruncatedError(opts.maxTokens, partial);
     }
-    return json.message.content;
+    const c = json.message?.content;
+    if (c == null) throw new Error('No content in generateJson response');
+    return { content: c };
   }
 
   async stream(opts: AdapterStreamOptions): Promise<AdapterResult> {

@@ -56,40 +56,13 @@ async function rerankWithAdapter(params: {
 }): Promise<RagResult[]> {
   const { userQuery, candidates, adapter, model, log } = params;
   const texts = candidates.map((r) => r.text);
-  const rerankInputTokens = Math.round(
-    (userQuery.length + texts.reduce((sum, t) => sum + t.length, 0)) / 4,
-  );
-  const cfg = getLlmConfig();
-  const rerankCallId = insertLlmCall({
-    chatId: null,
-    purpose: 'rerank',
-    provider: cfg.provider ?? '',
-    model,
-    requestJson: JSON.stringify({ query: userQuery, documents: texts }),
-  });
-  const rerankStartMs = Date.now();
   try {
     const scores = await adapter.rerank!(userQuery, texts, model);
-    const merged = candidates
+    return candidates
       .map((r, i) => ({ ...r, score: scores[i] ?? r.score }))
       .sort((a, b) => b.score - a.score)
       .slice(0, MERGED_TOP_N);
-    finaliseLlmCall(rerankCallId, {
-      responseText: JSON.stringify(merged.map((r) => ({ chunkId: r.chunkId, score: r.score }))),
-      promptTokens: rerankInputTokens,
-      completionTokens: null,
-      latencyMs: Date.now() - rerankStartMs,
-      error: null,
-    });
-    return merged;
   } catch (err) {
-    finaliseLlmCall(rerankCallId, {
-      responseText: null,
-      promptTokens: rerankInputTokens,
-      completionTokens: null,
-      latencyMs: Date.now() - rerankStartMs,
-      error: err instanceof Error ? err.message : String(err),
-    });
     log.warn({ err }, 'rag-service: reranking failed, falling back to original scores');
     return candidates.slice(0, MERGED_TOP_N);
   }
