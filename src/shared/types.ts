@@ -83,8 +83,15 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+/** GET /api/chats/:id/messages — message list plus tool-call labels rehydrated from `llm_calls`. */
+export interface ChatMessagesResponse {
+  messages: ChatMessage[];
+  toolEventLabels: Record<string, string[]>;
+}
+
 export type LlmCallPurpose =
   | 'chat'
+  | 'tool_call'
   | 'title'
   | 'abstract'
   | 'rag'
@@ -97,6 +104,7 @@ export type LlmCallPurpose =
 /** All values of `LlmCallPurpose` — keep in sync when extending the union. */
 export const LLM_CALL_PURPOSES: readonly LlmCallPurpose[] = [
   'chat',
+  'tool_call',
   'title',
   'abstract',
   'rag',

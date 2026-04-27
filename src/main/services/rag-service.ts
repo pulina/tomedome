@@ -7,9 +7,10 @@ import {
   getLlmConfig,
   getRerankerConfig,
 } from './config-service';
-import { withEmbeddingQueryPrefix } from '@shared/embedding-profile';
+import { bookEmbeddingProfileMismatch, withEmbeddingQueryPrefix } from '@shared/embedding-profile';
 import { finaliseLlmCall, insertLlmCall } from './llm-call-log';
-import { getChapterShortAbstracts, type ChapterShortAbstract } from './book-service';
+import { getChapterShortAbstracts, listBooks, type ChapterShortAbstract } from './book-service';
+import type { Book } from '@shared/types';
 import { searchAllForRag, searchChunksFts, searchAbstractsForRag } from './vector-store';
 import type { RagResult, AbstractRagResult } from './vector-store';
 import { getLogger } from '../lib/logger';
@@ -21,6 +22,36 @@ export interface RagContext {
   contextBlock: string;
   /** IDs of the chunks that were surfaced — saved to chat_messages.chunks_referenced. */
   chunkIds: string[];
+}
+
+function bookHasEmbeddingsMatchingProfile(
+  b: Book,
+  embeddingModel: string | null,
+  passagePrefix: string,
+): boolean {
+  if (b.chunkCount <= 0 || !b.embeddedAt) return false;
+  return !bookEmbeddingProfileMismatch(b, embeddingModel, passagePrefix);
+}
+
+/**
+ * True when query embedding + vector search over chunks can return rows for this scope
+ * (adapter supports embed, model configured, at least one book has embedded chunks for current profile).
+ */
+export function isSemanticRetrievalOperational(
+  seriesId: string | null,
+  bookId: string | null = null,
+): boolean {
+  const cfg = getLlmConfig();
+  const embeddingModel = getEmbeddingModel();
+  const passagePrefix = getEmbeddingPassagePrefix();
+  const adapter = getAdapter(cfg, getApiKeyPlaintext());
+  if (!adapter.embed || !embeddingModel) return false;
+
+  let books = listBooks();
+  if (bookId) books = books.filter((x) => x.id === bookId);
+  else if (seriesId) books = books.filter((x) => x.seriesId === seriesId);
+
+  return books.some((b) => bookHasEmbeddingsMatchingProfile(b, embeddingModel, passagePrefix));
 }
 
 /** Dense retrieval breadth before merge/rerank. */
@@ -83,7 +114,7 @@ function buildContextParts(params: {
       : hit.chapterNumber != null
         ? `Chapter ${hit.chapterNumber}`
         : 'Unknown chapter';
-    parts.push(`### "${hit.bookTitle}" — ${chapterLabel}\n${hit.text}`);
+    parts.push(`### "${hit.bookTitle}" — ${chapterLabel} [chunk: ${hit.chunkId}]\n${hit.text}`);
   }
 
   if (chapterAbstracts.length > 0) {
@@ -117,21 +148,27 @@ function buildContextParts(params: {
 /**
  * Build a RAG context block for a user query.
  *
- * 1. Embeds the query (semantic search) — skipped gracefully if no embedding support.
- * 2. Runs FTS keyword search in parallel.
+ * 1. Embeds the query (semantic search), vector search over chunks/abstracts, merges with FTS.
+ * 2. Skips the entire RAG path (no query embedding, no FTS, no log) when the library
+ *    has no chunk vectors matching the current embedding profile in scope — `search_text`
+ *    in chat still works via tools.
  * 3. Merges results, deduplicates by chunkId, sorts by score, takes top MERGED_TOP_N.
  * 4. Fetches chapter_short abstracts for the chapters that appear in results.
  * 5. Formats everything into a context block ready to be prepended to the user message.
  *
- * Returns null when no embedded chunks are available or an error occurs — the caller
+ * Returns null when there is nothing to inject or an error occurs — the caller
  * should proceed with the plain user message in that case.
  */
 export async function buildRagContext(userQuery: string, seriesId: string | null = null): Promise<RagContext | null> {
   const log = getLogger().child({ module: 'rag-service' });
 
   try {
+    if (!isSemanticRetrievalOperational(seriesId)) {
+      return null;
+    }
+
     const cfg = getLlmConfig();
-    const embeddingModel = getEmbeddingModel();
+    const embeddingModel = getEmbeddingModel()!; // guaranteed non-null by isSemanticRetrievalOperational
     const queryPrefix = getEmbeddingQueryPrefix();
     const passagePrefix = getEmbeddingPassagePrefix();
     const adapter = getAdapter(cfg, getApiKeyPlaintext());
@@ -139,41 +176,43 @@ export async function buildRagContext(userQuery: string, seriesId: string | null
     let semanticHits: RagResult[] = [];
     let abstractHits: AbstractRagResult[] = [];
 
-    if (adapter.embed && embeddingModel) {
-      try {
-        const vectors = await adapter.embed(
-          [withEmbeddingQueryPrefix(userQuery.trim(), queryPrefix)],
+    try {
+      const vectors = await adapter.embed(
+        [withEmbeddingQueryPrefix(userQuery.trim(), queryPrefix)],
+        embeddingModel,
+      );
+      const queryVector = vectors[0];
+      if (queryVector) {
+        semanticHits = searchAllForRag(queryVector, SEMANTIC_TOP_N, embeddingModel, seriesId, passagePrefix);
+        abstractHits = searchAbstractsForRag(
+          queryVector,
+          ABSTRACT_TOP_N,
+          ['chapter_detailed'],
           embeddingModel,
+          seriesId,
+          passagePrefix,
         );
-        const queryVector = vectors[0];
-        if (queryVector) {
-          semanticHits = searchAllForRag(queryVector, SEMANTIC_TOP_N, embeddingModel, seriesId, passagePrefix);
-          abstractHits = searchAbstractsForRag(
-            queryVector,
-            ABSTRACT_TOP_N,
-            ['chapter_detailed'],
-            embeddingModel,
-            seriesId,
-            passagePrefix,
-          );
-        }
-      } catch (err) {
-        log.warn({ err }, 'rag-service: embedding failed, falling back to FTS only');
       }
+    } catch (err) {
+      log.warn({ err }, 'rag-service: query embedding failed, using FTS merge only for this turn');
     }
 
     const ftsHits = searchChunksFts(userQuery, FTS_TOP_N, seriesId);
 
     const byId = mergeSemanticAndFtsByChunkId(semanticHits, ftsHits);
 
+    if (byId.size === 0) {
+      return null;
+    }
+
     const ragCallId = insertLlmCall({
       chatId: null,
       purpose: 'rag',
       provider: cfg.provider ?? '',
-      model: embeddingModel ?? '',
+      model: embeddingModel,
       requestJson: JSON.stringify({
         query: userQuery,
-        embeddingModel: embeddingModel ?? null,
+        embeddingModel,
         semantic: semanticHits.length,
         fts: ftsHits.length,
         abstractHits: abstractHits.length,
@@ -182,17 +221,6 @@ export async function buildRagContext(userQuery: string, seriesId: string | null
     const ragStartMs = Date.now();
 
     const ragInputTokens = Math.round(userQuery.length / 4);
-
-    if (byId.size === 0) {
-      finaliseLlmCall(ragCallId, {
-        responseText: JSON.stringify({ chunks: [], abstractHits: [] }),
-        promptTokens: ragInputTokens,
-        completionTokens: null,
-        latencyMs: Date.now() - ragStartMs,
-        error: null,
-      });
-      return null;
-    }
 
     const rerankerCfg = getRerankerConfig();
     const useReranker = rerankerCfg.enabled && rerankerCfg.model.length > 0 && !!adapter.rerank;
@@ -271,4 +299,33 @@ export async function buildRagContext(userQuery: string, seriesId: string | null
     getLogger().warn({ err }, 'rag-service: buildRagContext failed, skipping RAG');
     return null;
   }
+}
+
+/**
+ * Embed a model-formulated query and return the top semantic hits.
+ * Returns null when semantic retrieval cannot run for this scope (no embed support or no usable vectors).
+ */
+export async function searchSemanticForTool(
+  query: string,
+  topN: number,
+  bookId: string | null,
+  seriesId: string | null,
+): Promise<RagResult[] | null> {
+  if (!isSemanticRetrievalOperational(seriesId, bookId)) return null;
+
+  const cfg = getLlmConfig();
+  const embeddingModel = getEmbeddingModel()!; // guaranteed non-null by isSemanticRetrievalOperational
+  const queryPrefix = getEmbeddingQueryPrefix();
+  const passagePrefix = getEmbeddingPassagePrefix();
+  const adapter = getAdapter(cfg, getApiKeyPlaintext()); // adapter.embed guaranteed by isSemanticRetrievalOperational
+
+  const vectors = await adapter.embed!(
+    [withEmbeddingQueryPrefix(query.trim(), queryPrefix)],
+    embeddingModel,
+  );
+  const queryVector = vectors[0];
+  if (!queryVector) return [];
+
+  const hits = searchAllForRag(queryVector, topN, embeddingModel, seriesId, passagePrefix);
+  return bookId ? hits.filter((h) => h.bookId === bookId) : hits;
 }

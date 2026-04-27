@@ -222,8 +222,8 @@ licenses/        # Redistributed font license texts (SIL OFL)
 
 Planned and in-flight work:
 
+- **Retry / rephrase last turn** — After a failed turn (model error, timeout, stream abort, or a bad reply), let the user **retry** the last question: resend as-is or **rephrase** it in place before resending, without retyping the whole thread.
 - **Reader-scoped filtering** — Narrow RAG and answers by reading progress: exclude whole books or individual chapters from context while still respecting spoiler boundaries for what you have not read.
-- **Full-text search as a tool** — Expose SQLite FTS (or equivalent) as an LLM-callable tool for precise lexical lookups alongside embedding retrieval.
 - **Entity resolution and wiki** — Combine LLM-based named-entity extraction with fuzzy matching (e.g. Levenshtein) to merge aliases and typos into a stable entity dictionary or in-app wiki.
 - **Theme support** — Multiple UI themes beyond the current skinnable default (consistent with the theme contract under `src/renderer/src/themes/`).
 - **Model evaluation benchmark (synthetic book)** — Regression harness using a [synthetic book and golden Q/A set](docs/synthetic-book-evaluation.md) so scores reflect retrieval and grounding, not memorized training data; includes end-to-end and retrieval-only metrics (see that doc).

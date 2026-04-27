@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-04-27
+### Added
+- **Semantic search tool** (`search_semantic`): the model can trigger an embedding search with a self-formulated query, solving follow-up questions where the user's literal message embeds poorly. Complements `search_text` (verbatim keyword hits) with conceptual/descriptive retrieval. Returns `null` gracefully when no embedding model is configured.
+- **Tool call logging**: each tool execution in the agentic loop is now recorded as its own `llm_calls` row with purpose `tool_call`, the tool name as model, full arguments in `requestJson`, the tool output in `responseText`, and execution latency.
+- **Chunk context expansion** (`read_chunk_window` tool): when a retrieved passage cuts off mid-scene or mid-dialogue, the model can fetch N chunks before and after it using the `[chunk: id]` annotation now included in every RAG passage header.
+- **Keyword search tool** (`search_text`): the model can run a direct FTS5 keyword search over all ingested text, with optional per-book scoping. Useful for locating every occurrence of a name or phrase that semantic retrieval may rank lower.
+- **Chapter list tool** (`list_chapters`): lightweight chapter index (number → title) used to resolve ambiguous chapter references before calling abstract tools. Consecutive chapters sharing the same title are annotated as split parts (e.g. `(part 1 of 2)`) so the model knows to retrieve all parts.
+- System prompt: **Chapter reference disambiguation** rule — instructs the model to call `list_chapters` before any chapter abstract tool when the user's reference is not an unambiguous integer, and to retrieve all annotated split parts.
+- **Ollama tool calling**: `OllamaAdapter` now implements `call()`, enabling the full agentic tool-use loop for Ollama models (Qwen3, Llama3, etc.). Handles Ollama wire-format differences (arguments as objects, no tool call IDs, think-block stripping from response content).
+
+### Changed
+- System prompt: `search_text` and `search_semantic` descriptions rewritten with a mechanical decision rule — *exact known words → `search_text`; concept or description → `search_semantic`* — to minimise wrong-tool selection.
+- System prompt: pre-retrieved passages clarified as **verbatim raw text** (not generated summaries); added explicit guidance to use `search_semantic` for follow-up quote requests when the current RAG context has shifted.
+
 ## [0.1.7] - 2026-04-27
 ### Added
 - **Temperature control**: per-provider temperature setting in Settings. Slider (0–1 for Anthropic/LM Studio, 0–2 for OpenAI/OpenRouter/Ollama) with a text input for exact values; "Use model default" checkbox omits the parameter from requests entirely. LM Studio falls back to character-based token estimation when the server does not return usage counts.
@@ -71,7 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stats and logs page for monitoring ingestion jobs and LLM call history
 - Cross-platform builds: macOS (arm64, x64), Windows (x64), Linux (deb, rpm)
 
-[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/pulina/tomedome/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/pulina/tomedome/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/pulina/tomedome/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/pulina/tomedome/compare/v0.1.4...v0.1.5

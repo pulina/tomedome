@@ -1,6 +1,6 @@
 import { getLogger } from '../lib/logger';
 import { getApiKeyPlaintext, getLlmConfig } from './config-service';
-import { patchLlmCallError } from './llm-call-log';
+import { patchLlmCallError, insertLlmCall, finaliseLlmCall } from './llm-call-log';
 import { getAdapter, ThinkFilter, stripThinkBlocks } from '../llm';
 import { TOP_K_CAPABLE_PROVIDERS, type LlmCallPurpose } from '@shared/types';
 import type { AgentMessage, ToolDefinition, ToolCall } from '../llm/types';
@@ -221,12 +221,29 @@ export async function resolveToolCalls(opts: {
     for (const tc of result.toolCalls) {
       if (abortSignal?.aborted) return null;
       onToolCall?.(tc.name, tc.arguments);
+      const toolLogId = insertLlmCall({
+        chatId: opts.chatId ?? null,
+        purpose: 'tool_call',
+        provider: cfg.provider ?? '',
+        model: tc.name,
+        requestJson: JSON.stringify({ tool: tc.name, arguments: tc.arguments }),
+      });
+      const toolStarted = Date.now();
       let output: string;
+      let toolError: string | null = null;
       try {
         output = await executor(tc.name, tc.arguments);
       } catch (err) {
-        output = `Error: ${err instanceof Error ? err.message : String(err)}`;
+        toolError = err instanceof Error ? err.message : String(err);
+        output = `Error: ${toolError}`;
       }
+      finaliseLlmCall(toolLogId, {
+        responseText: toolError ? null : output,
+        promptTokens: null,
+        completionTokens: null,
+        latencyMs: Date.now() - toolStarted,
+        error: toolError,
+      });
       messages.push({ role: 'tool_result', toolCallId: tc.id, name: tc.name, content: output });
     }
   }

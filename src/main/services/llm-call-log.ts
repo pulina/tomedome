@@ -93,6 +93,15 @@ export interface LlmCallsQuery {
   purposes?: LlmCallPurpose[];
 }
 
+export function listToolCallsForChatAsc(chatId: string): LlmCall[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM llm_calls WHERE chat_id = ? AND purpose = 'tool_call' ORDER BY created_at ASC`,
+    )
+    .all(chatId) as LlmCallRow[];
+  return rows.map(rowToCall);
+}
+
 export function listLlmCalls(q: LlmCallsQuery = {}): LlmCall[] {
   const limit = Math.max(1, Math.min(q.limit ?? 200, 2000));
   const purposes = (q.purposes ?? []).filter((p): p is LlmCallPurpose => PURPOSE_ALLOW.has(p));

@@ -4,14 +4,39 @@ import {
   getChat,
   getMessages,
 } from './chat-service';
-import { listBooks, getAbstracts, getBook } from './book-service';
+import { listBooks, getAbstracts, getBook, getChunkWindow, listChapters, annotateChapterSplits } from './book-service';
+import { searchChunksFts } from './vector-store';
 import { listSeries } from './series-service';
 import { ChatTurn, streamChat, resolveToolCalls } from './llm-client';
 import type { AgentMessage, ToolDefinition } from './llm-client';
 import { evaluateTitle } from './title-service';
-import { buildRagContext } from './rag-service';
+import {
+  buildRagContext,
+  isSemanticRetrievalOperational,
+  searchSemanticForTool,
+  type RagContext,
+} from './rag-service';
 import chatSystemBase from '../prompts/chat-system.md?raw';
 import { getLogger } from '../lib/logger';
+import { toolLabelForToolCall } from './chat-tool-labels';
+
+const CHUNK_WINDOW_MAX = 10;
+
+function formatChunkLabel(chapterNumber: number | null | undefined, chapterTitle: string | null | undefined): string {
+  if (chapterTitle) return `Chapter ${chapterNumber ?? '?'}: ${chapterTitle}`;
+  if (chapterNumber != null) return `Chapter ${chapterNumber}`;
+  return 'Unknown chapter';
+}
+
+type RagHit = { bookTitle: string; chapterNumber: number | null; chapterTitle: string | null; chunkId: string; text: string };
+
+function formatRagHits(hits: RagHit[], heading: string): string {
+  const lines: string[] = [`## ${heading}\n`];
+  for (const hit of hits) {
+    lines.push(`### "${hit.bookTitle}" — ${formatChunkLabel(hit.chapterNumber, hit.chapterTitle)} [chunk: ${hit.chunkId}]\n${hit.text}`);
+  }
+  return lines.join('\n\n');
+}
 
 const BOOK_TOOLS: ToolDefinition[] = [
   {
@@ -53,28 +78,95 @@ const BOOK_TOOLS: ToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'read_chunk_window',
+    description:
+      'Returns the surrounding raw text chunks for a given chunk ID. Use when a retrieved passage seems to cut off mid-scene or mid-dialogue and you need the immediate context before or after it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        chunk_id: {
+          type: 'string',
+          description: 'The chunk ID shown in brackets after a passage header, e.g. [chunk: abc-123].',
+        },
+        before: {
+          type: 'number',
+          description: 'Number of chunks to include before the anchor. Default 2.',
+        },
+        after: {
+          type: 'number',
+          description: 'Number of chunks to include after the anchor. Default 2.',
+        },
+      },
+      required: ['chunk_id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_chapters',
+    description:
+      'Returns all chapters of a book as a numbered list with their titles. Use this to resolve a chapter reference before calling read_chapter_abstract or read_chapter_detailed — especially when the user refers to a chapter by name rather than number, or when multiple chapters could share the same name.',
+    parameters: {
+      type: 'object',
+      properties: {
+        book_id: { type: 'string', description: 'The book ID.' },
+      },
+      required: ['book_id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'search_text',
+    description:
+      'Keyword search over all ingested text. Use when you know a specific word, name, or phrase that must appear verbatim — character names, place names, quoted fragments, unique terminology. Supports FTS5 syntax (AND, OR, NOT, "phrase", prefix*).',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Word or phrase that must appear verbatim. Supports FTS5 operators.',
+        },
+        book_id: {
+          type: 'string',
+          description: 'Optional. Limit search to a specific book.',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'search_semantic',
+    description:
+      'Semantic (embedding) search over all ingested text. Use when you need passages about a concept, description, or scene but cannot predict the exact words — e.g. "creature physical appearance", "battle at the castle gates". Complements search_text: use search_text for known verbatim words, use search_semantic for conceptual or descriptive queries.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'A descriptive phrase capturing what you are looking for conceptually.',
+        },
+        book_id: {
+          type: 'string',
+          description: 'Optional. Limit search to a specific book.',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
 ];
 
-function toolLabel(name: string, args: Record<string, unknown>): string {
-  switch (name) {
-    case 'read_book_abstract': {
-      const book = getBook(args['book_id'] as string);
-      return `Read book abstract: ${book?.title ?? args['book_id']}`;
-    }
-    case 'read_chapter_abstract': {
-      const book = getBook(args['book_id'] as string);
-      return `Read chapter ${args['chapter_number']} abstract${book ? ` — ${book.title}` : ''}`;
-    }
-    case 'read_chapter_detailed': {
-      const book = getBook(args['book_id'] as string);
-      return `Read chapter ${args['chapter_number']} detailed${book ? ` — ${book.title}` : ''}`;
-    }
-    default:
-      return name;
-  }
+function bookToolsForChat(semanticOk: boolean): ToolDefinition[] {
+  if (semanticOk) return BOOK_TOOLS;
+  return BOOK_TOOLS.filter((t) => t.name !== 'search_semantic');
 }
 
-async function executeTool(name: string, args: Record<string, unknown>): Promise<string> {
+async function executeTool(
+  name: string,
+  args: Record<string, unknown>,
+  seriesId: string | null,
+): Promise<string> {
   switch (name) {
     case 'read_book_abstract': {
       const book = getBook(args['book_id'] as string);
@@ -111,12 +203,74 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       return chap?.content ?? 'No detailed abstract available for this chapter.';
     }
 
+    case 'read_chunk_window': {
+      const before = Math.min(Math.max(Math.round((args['before'] as number | undefined) ?? 2), 0), CHUNK_WINDOW_MAX);
+      const after = Math.min(Math.max(Math.round((args['after'] as number | undefined) ?? 2), 0), CHUNK_WINDOW_MAX);
+      const result = getChunkWindow(args['chunk_id'] as string, before, after);
+      if (!result) return 'Chunk not found.';
+
+      const lines: string[] = [`## Surrounding context — "${result.bookTitle}"\n`];
+      for (const chunk of result.chunks) {
+        const isAnchor = chunk.paragraph_index === result.anchorIndex;
+        const marker = isAnchor ? ' ← retrieved chunk' : '';
+        lines.push(`### ${formatChunkLabel(chunk.chapter_number, chunk.chapter_title)}${marker} [chunk: ${chunk.id}]\n${chunk.raw_text}`);
+      }
+      return lines.join('\n\n');
+    }
+
+    case 'list_chapters': {
+      const book = getBook(args['book_id'] as string);
+      if (!book) return 'Book not found.';
+      const annotated = annotateChapterSplits(listChapters(book.id));
+      if (annotated.length === 0) return 'No chapter data available for this book yet.';
+
+      const lines = annotated.map((c) => {
+        const title = c.chapterTitle ?? '(untitled)';
+        return `  ${c.chapterNumber}. ${title}${c.partLabel ? ` ${c.partLabel}` : ''}`;
+      });
+      return `Chapters of "${book.title}":\n${lines.join('\n')}`;
+    }
+
+    case 'search_text': {
+      const query = (args['query'] as string).trim();
+      const rawBookId = args['book_id'] as string | undefined;
+      const bookId = rawBookId?.trim() ? rawBookId.trim() : null;
+      if (!query) return 'Query must not be empty.';
+
+      const hits = searchChunksFts(query, 8, null, bookId);
+      if (hits.length === 0) return 'No passages found matching that query.';
+      return formatRagHits(hits, `Search results for "${query}"`);
+    }
+
+    case 'search_semantic': {
+      const query = (args['query'] as string).trim();
+      const rawBookId = args['book_id'] as string | undefined;
+      const bookId = rawBookId?.trim() ? rawBookId.trim() : null;
+      if (!query) return 'Query must not be empty.';
+
+      let hits: Awaited<ReturnType<typeof searchSemanticForTool>>;
+      try {
+        hits = await searchSemanticForTool(query, 6, bookId, seriesId);
+      } catch (err) {
+        return `Semantic search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+
+      if (hits === null) {
+        return (
+          'Semantic search is unavailable in this chat scope (no embedding API and/or no chunk vectors matching the current embedding profile). ' +
+          'Use search_text for verbatim keyword search and read_book_abstract, read_chapter_abstract, read_chapter_detailed, or list_chapters for narrative context.'
+        );
+      }
+      if (hits.length === 0) return 'No passages found matching that query.';
+      return formatRagHits(hits, `Semantic search results for "${query}"`);
+    }
+
     default:
       return `Unknown tool: ${name}`;
   }
 }
 
-function buildSystemPrompt(seriesId: string | null): string {
+function buildSystemPrompt(seriesId: string | null, semanticOk: boolean): string {
   const allSeries = listSeries();
   const allBooks = listBooks();
 
@@ -150,6 +304,14 @@ function buildSystemPrompt(seriesId: string | null): string {
     sections.push(bookLines.join('\n'));
   }
 
+  if (!semanticOk) {
+    sections.push(
+      '\n## Semantic chunk retrieval unavailable\n\n' +
+        'The `search_semantic` tool and automatic semantic RAG on the user message are off: there is no embedding-capable provider/model and/or no chunk embeddings match the current embedding profile for books in this chat scope. ' +
+        'Use `search_text` (FTS) for exact words and phrases, and `read_book_abstract`, `read_chapter_abstract`, `read_chapter_detailed`, and `list_chapters` for summaries and structure.',
+    );
+  }
+
   if (!seriesId) {
     const orphans = visibleBooks.filter((b) => !b.seriesId || !allSeries.find((s) => s.id === b.seriesId));
     if (orphans.length > 0) {
@@ -176,32 +338,6 @@ export async function streamChatAssistantReply(params: {
 
   const userMessage = addMessage(chatId, 'user', content);
 
-  const ragContext = await buildRagContext(content, seriesId);
-
-  const allMessages = getMessages(chatId);
-  const lastCompactionIdx = allMessages.map((m) => m.role).lastIndexOf('compaction');
-
-  // Compaction stores a summary as a synthetic message; we treat it as a checkpoint
-  // and only send messages after it (plus a short prefix) so we do not replay the full thread.
-  let historyMessages: typeof allMessages;
-  let compactionPrefix: ChatTurn[] = [];
-
-  if (lastCompactionIdx >= 0) {
-    const compactionMsg = allMessages[lastCompactionIdx]!;
-    historyMessages = allMessages.slice(lastCompactionIdx + 1).filter((m) => m.role !== 'compaction');
-    compactionPrefix = [
-      { role: 'user', content: `[Previous conversation summary]\n\n${compactionMsg.content}` },
-      { role: 'assistant', content: 'Understood. Continuing with that context.' },
-    ];
-  } else {
-    historyMessages = allMessages.filter((m) => m.role !== 'compaction');
-    compactionPrefix = [];
-  }
-
-  const history = historyMessages.map(
-    (m): ChatTurn => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }),
-  );
-
   reply.hijack();
   const origin = req.headers.origin ?? '*';
   reply.raw.writeHead(200, {
@@ -215,6 +351,9 @@ export async function streamChatAssistantReply(params: {
 
   const abort = new AbortController();
   reply.raw.on('close', () => abort.abort());
+
+  const rawSocket = reply.raw.socket as { setNoDelay?: (v: boolean) => void } | undefined;
+  rawSocket?.setNoDelay?.(true);
 
   // Drain-aware SSE write. reply.raw.write() returns false when the kernel
   // buffer is full (backpressure); we queue subsequent chunks and flush them
@@ -242,16 +381,52 @@ export async function streamChatAssistantReply(params: {
 
   write('user-message', userMessage);
 
+  const keepalive = setInterval(() => {
+    if (reply.raw.writableEnded) return;
+    pending.push(': keepalive\n\n');
+    if (!flushing) flushPending();
+  }, 1000);
+
+  // Compute once — used for system prompt, tool list, and RAG guard below.
+  const semanticOk = isSemanticRetrievalOperational(seriesId);
+
+  let ragContext: RagContext | null = null;
+  try {
+    ragContext = await buildRagContext(content, seriesId);
+  } catch (err) {
+    getLogger().warn({ err, chatId }, 'buildRagContext threw');
+  }
+
   if (ragContext) {
     write('rag_context', { chunkCount: ragContext.chunkIds.length });
   }
 
-  const keepalive = setInterval(() => {
-    if (!reply.raw.writableEnded) reply.raw.write(': keepalive\n\n');
-  }, 1000);
+  const allMessages = getMessages(chatId);
+  const lastCompactionIdx = allMessages.map((m) => m.role).lastIndexOf('compaction');
+
+  // Compaction stores a summary as a synthetic message; we treat it as a checkpoint
+  // and only send messages after it (plus a short prefix) so we do not replay the full thread.
+  let historyMessages: typeof allMessages;
+  let compactionPrefix: ChatTurn[] = [];
+
+  if (lastCompactionIdx >= 0) {
+    const compactionMsg = allMessages[lastCompactionIdx]!;
+    historyMessages = allMessages.slice(lastCompactionIdx + 1).filter((m) => m.role !== 'compaction');
+    compactionPrefix = [
+      { role: 'user', content: `[Previous conversation summary]\n\n${compactionMsg.content}` },
+      { role: 'assistant', content: 'Understood. Continuing with that context.' },
+    ];
+  } else {
+    historyMessages = allMessages.filter((m) => m.role !== 'compaction');
+    compactionPrefix = [];
+  }
+
+  const history = historyMessages.map(
+    (m): ChatTurn => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }),
+  );
 
   try {
-    const systemPrompt = buildSystemPrompt(seriesId);
+    const systemPrompt = buildSystemPrompt(seriesId, semanticOk);
 
     const augmentedHistory: ChatTurn[] = history.map((turn, idx) => {
       if (idx === history.length - 1 && turn.role === 'user' && ragContext) {
@@ -273,9 +448,9 @@ export async function streamChatAssistantReply(params: {
 
     const resolved = await resolveToolCalls({
       messages: agentMessages,
-      tools: BOOK_TOOLS,
-      executor: executeTool,
-      onToolCall: (name, args) => write('tool_use', { label: toolLabel(name, args) }),
+      tools: bookToolsForChat(semanticOk),
+      executor: (n, a) => executeTool(n, a, seriesId),
+      onToolCall: (name, args) => write('tool_use', { label: toolLabelForToolCall(name, args) }),
       abortSignal: abort.signal,
       chatId,
     });

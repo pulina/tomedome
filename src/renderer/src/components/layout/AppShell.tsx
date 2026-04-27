@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Outlet } from 'react-router-dom';
 import { ThemeProvider } from '../ThemeProvider';
 import { ChatsContext, useChatsContextValue } from '../../hooks/useChats';
+import { ChatStreamProvider } from '../../hooks/ChatStreamContext';
 import { SelectedSeriesContext, useSelectedSeriesContextValue } from '../../hooks/useSelectedSeries';
 import { InspectorContext, useInspectorContextValue } from '../../hooks/useInspector';
 import { Sidebar } from './Sidebar';
@@ -72,6 +73,7 @@ export function AppShell() {
     <InspectorContext.Provider value={inspectorValue}>
     <SelectedSeriesContext.Provider value={selectedSeriesValue}>
     <ChatsContext.Provider value={chatsValue}>
+      <ChatStreamProvider>
       <ThemeProvider>
         <div className={styles.app}>
           <div className={`${styles.layout} ${dragging ? styles.layoutDragging : ''}`}>
@@ -140,6 +142,7 @@ export function AppShell() {
           </div>
         </div>
       </ThemeProvider>
+      </ChatStreamProvider>
     </ChatsContext.Provider>
     </SelectedSeriesContext.Provider>
     </InspectorContext.Provider>

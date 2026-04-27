@@ -4,6 +4,7 @@ import {
   createChat,
   deleteChat,
   getChat,
+  getMessageToolEventLabels,
   getMessages,
   listChats,
   setChatTitle,
@@ -52,7 +53,12 @@ export async function registerChatRoutes(fastify: FastifyInstance): Promise<void
     async (req, reply) => {
       const chat = getChat(req.params.id);
       if (!chat) return reply.code(404).send(apiErr('not_found', 'not found'));
-      return getMessages(req.params.id);
+      const id = req.params.id;
+      const messages = getMessages(id);
+      return {
+        messages,
+        toolEventLabels: getMessageToolEventLabels(id, messages),
+      };
     },
   );
 

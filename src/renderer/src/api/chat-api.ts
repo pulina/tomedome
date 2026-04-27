@@ -3,6 +3,7 @@ import type {
   Chat,
   ChatContextAvailability,
   ChatMessage,
+  ChatMessagesResponse,
   LlmCall,
   LlmCallPurpose,
   LogLevel,
@@ -19,7 +20,7 @@ export const chatApi = {
   renameChat: (id: string, title: string) =>
     api.put<Chat>(`/api/chats/${encodeURIComponent(id)}/title`, { title }),
   listMessages: (id: string) =>
-    api.get<ChatMessage[]>(`/api/chats/${encodeURIComponent(id)}/messages`),
+    api.get<ChatMessagesResponse>(`/api/chats/${encodeURIComponent(id)}/messages`),
   getLlmCall: (id: string) => api.get<LlmCall>(`/api/logs/llm/${encodeURIComponent(id)}`),
   compact: (id: string) => api.post<{ compactionMessage: ChatMessage }>(`/api/chats/${encodeURIComponent(id)}/compact`),
 };

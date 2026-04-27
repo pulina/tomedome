@@ -187,9 +187,21 @@ export function searchBookEmbeddings(
  * similarity and can be unioned/reranked with dense retrieval.
  * Returns [] on FTS query parse errors (e.g. special characters in query).
  */
-export function searchChunksFts(query: string, topN: number, seriesId?: string | null): RagResult[] {
+export function searchChunksFts(
+  query: string,
+  topN: number,
+  seriesId?: string | null,
+  bookId?: string | null,
+): RagResult[] {
   try {
     const seriesClause = seriesId ? ' AND b.series_id = ?' : '';
+    const bookClause = bookId ? ' AND c.book_id = ?' : '';
+    // Arg order must match `?` positions in the SQL below:
+    // 1: chunks_fts MATCH, 2 (cond): series_id, 3 (cond): book_id, last: LIMIT
+    const sqlArgs: unknown[] = [query];
+    if (seriesId) sqlArgs.push(seriesId);
+    if (bookId) sqlArgs.push(bookId);
+    sqlArgs.push(topN);
     const rows = getDb()
       .prepare(
         `SELECT c.id AS chunk_id, c.book_id, c.chapter_number, c.chapter_title, c.raw_text,
@@ -197,11 +209,11 @@ export function searchChunksFts(query: string, topN: number, seriesId?: string |
          FROM chunks_fts
          JOIN chunks c ON c.rowid = chunks_fts.rowid
          JOIN books b ON b.id = c.book_id
-         WHERE chunks_fts MATCH ?${seriesClause}
+         WHERE chunks_fts MATCH ?${seriesClause}${bookClause}
          ORDER BY rank
          LIMIT ?`,
       )
-      .all(...(seriesId ? [query, seriesId, topN] : [query, topN])) as Array<{
+      .all(...sqlArgs) as Array<{
       chunk_id: string;
       book_id: string;
       chapter_number: number | null;

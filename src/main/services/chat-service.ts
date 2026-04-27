@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 import { Chat, ChatMessage, ChatRole, TitleStatus } from '@shared/types';
 import { getDb } from './database';
+import { listToolCallsForChatAsc } from './llm-call-log';
+import { toolLabelFromLlmToolCallRow } from './chat-tool-labels';
 
 interface ChatRow {
   id: string;
@@ -112,4 +114,43 @@ export function getMessages(chatId: string): ChatMessage[] {
     .prepare(`SELECT * FROM chat_messages WHERE chat_id = ? ORDER BY created_at ASC`)
     .all(chatId) as MessageRow[];
   return rows.map(messageFromRow);
+}
+
+/**
+ * Maps assistant message id → tool UI labels for that turn (from persisted `tool_call` llm rows).
+ * Pass pre-loaded `messages` to avoid a second DB query when the caller already has them.
+ *
+ * Tool calls are correlated to turns by timestamp: tool rows with createdAt between the
+ * preceding message's timestamp (exclusive) and the assistant message's timestamp (exclusive)
+ * belong to that assistant turn. `ti` is a forward-only pointer into the sorted toolRows array
+ * so the overall scan is O(messages + toolRows).
+ */
+export function getMessageToolEventLabels(
+  chatId: string,
+  messages?: ChatMessage[],
+): Record<string, string[]> {
+  const msgs = messages ?? getMessages(chatId);
+  const toolRows = listToolCallsForChatAsc(chatId);
+  const out: Record<string, string[]> = {};
+  let ti = 0;
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i]!;
+    if (m.role !== 'assistant') continue;
+    const prev = msgs[i - 1];
+    if (!prev) continue;
+    const lower = prev.createdAt;
+    const upper = m.createdAt;
+    // Advance past tool rows that preceded the previous message (already attributed).
+    while (ti < toolRows.length && toolRows[ti]!.createdAt <= lower) ti++;
+    // Collect tool rows within this turn's window.
+    const labels: string[] = [];
+    let scan = ti;
+    while (scan < toolRows.length && toolRows[scan]!.createdAt < upper) {
+      labels.push(toolLabelFromLlmToolCallRow(toolRows[scan]!));
+      scan++;
+    }
+    ti = scan;
+    if (labels.length > 0) out[m.id] = labels;
+  }
+  return out;
 }

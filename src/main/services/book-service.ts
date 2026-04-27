@@ -201,6 +201,121 @@ export function getChunks(bookId: string): ChunkRow[] {
     .all(bookId) as ChunkRow[];
 }
 
+
+export interface ChunkWindowResult {
+  bookTitle: string;
+  bookId: string;
+  chunks: ChunkRow[];
+  anchorIndex: number;
+}
+
+export function getChunkWindow(chunkId: string, before: number, after: number): ChunkWindowResult | null {
+  const db = getDb();
+
+  const anchor = db
+    .prepare(
+      `SELECT c.*, b.title AS book_title FROM chunks c JOIN books b ON b.id = c.book_id WHERE c.id = ?`,
+    )
+    .get(chunkId) as (ChunkRow & { book_title: string }) | undefined;
+
+  if (!anchor) return null;
+
+  const chunks = db
+    .prepare(
+      `SELECT * FROM chunks
+       WHERE book_id = ?
+         AND paragraph_index BETWEEN ? AND ?
+       ORDER BY paragraph_index`,
+    )
+    .all(anchor.book_id, anchor.paragraph_index - before, anchor.paragraph_index + after) as ChunkRow[];
+
+  return {
+    bookTitle: anchor.book_title,
+    bookId: anchor.book_id,
+    chunks,
+    anchorIndex: anchor.paragraph_index,
+  };
+}
+
+export interface ChapterEntry {
+  chapterNumber: number;
+  chapterTitle: string | null;
+}
+
+export function listChapters(bookId: string): ChapterEntry[] {
+  const db = getDb();
+
+  // Re-abstracted books can have multiple rows per chapter_number; pick the title
+  // from the most recent row (MAX(rowid)). SQLite guarantees bare columns in an
+  // aggregate query come from the row that satisfies the aggregate, so chapter_title
+  // here is always from the latest abstract row for that chapter.
+  let rows = db
+    .prepare(
+      `SELECT chapter_number, chapter_title
+       FROM (
+         SELECT chapter_number, chapter_title, MAX(rowid)
+         FROM abstracts
+         WHERE book_id = ? AND chapter_number IS NOT NULL
+         GROUP BY chapter_number
+       )
+       ORDER BY chapter_number ASC`,
+    )
+    .all(bookId) as Array<{ chapter_number: number; chapter_title: string | null }>;
+
+  // Fallback: no abstracts yet — derive chapter list from raw chunk metadata.
+  if (rows.length === 0) {
+    rows = db
+      .prepare(
+        `SELECT chapter_number, chapter_title
+         FROM (
+           SELECT chapter_number, chapter_title, MAX(rowid)
+           FROM chunks
+           WHERE book_id = ? AND chapter_number IS NOT NULL
+           GROUP BY chapter_number
+         )
+         ORDER BY chapter_number ASC`,
+      )
+      .all(bookId) as Array<{ chapter_number: number; chapter_title: string | null }>;
+  }
+
+  return rows.map((r) => ({ chapterNumber: r.chapter_number, chapterTitle: r.chapter_title }));
+}
+
+export interface AnnotatedChapterEntry extends ChapterEntry {
+  /** "(part N of M)" when consecutive chapters share the same title; null otherwise. */
+  partLabel: string | null;
+}
+
+/**
+ * Detect consecutive chapters that share the same title (split chapters) and
+ * annotate each with "(part N of M)". Input must be sorted by chapterNumber ASC.
+ */
+export function annotateChapterSplits(chapters: ChapterEntry[]): AnnotatedChapterEntry[] {
+  const partLabels = new Map<number, string>();
+  let i = 0;
+  while (i < chapters.length) {
+    const title = chapters[i]!.chapterTitle;
+    let j = i + 1;
+    // Advance j while the title is the same AND chapter numbers are consecutive.
+    while (
+      j < chapters.length &&
+      title !== null &&
+      chapters[j]!.chapterTitle === title &&
+      chapters[j]!.chapterNumber === chapters[j - 1]!.chapterNumber + 1
+    ) {
+      j++;
+    }
+    const count = j - i;
+    if (count > 1) {
+      for (let k = 0; k < count; k++) {
+        partLabels.set(chapters[i + k]!.chapterNumber, `(part ${k + 1} of ${count})`);
+      }
+    }
+    i = j;
+  }
+  return chapters.map((c) => ({ ...c, partLabel: partLabels.get(c.chapterNumber) ?? null }));
+}
+
 export function saveAbstract(
   bookId: string,
   chapterNumber: number | null,
