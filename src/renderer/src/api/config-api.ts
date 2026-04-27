@@ -10,6 +10,9 @@ export interface SaveLlmPayload {
   embeddingPassagePrefix?: string;
   ollamaBaseUrl?: string;
   lmStudioBaseUrl?: string;
+  temperature?: number | null;
+  topP?: number | null;
+  topK?: number | null;
 }
 
 export interface ListModelsPayload {

@@ -2,7 +2,7 @@ import { getLogger } from '../lib/logger';
 import { getApiKeyPlaintext, getLlmConfig } from './config-service';
 import { patchLlmCallError } from './llm-call-log';
 import { getAdapter, ThinkFilter, stripThinkBlocks } from '../llm';
-import type { LlmCallPurpose } from '@shared/types';
+import { TOP_K_CAPABLE_PROVIDERS, type LlmCallPurpose } from '@shared/types';
 import type { AgentMessage, ToolDefinition, ToolCall } from '../llm/types';
 
 export type ChatRole = 'system' | 'user' | 'assistant';
@@ -48,6 +48,9 @@ export type { AgentMessage, ToolDefinition, ToolCall };
 export async function generateStructured<T>(opts: GenerateOptions): Promise<T> {
   const cfg = getLlmConfig();
   if (!cfg.provider) throw new Error('LLM not configured');
+  const temperature = cfg.temperatures[cfg.provider];
+  const topP = cfg.topPs[cfg.provider];
+  const topK = TOP_K_CAPABLE_PROVIDERS.includes(cfg.provider) ? cfg.topKs[cfg.provider] : undefined;
   const adapter = getAdapter(cfg, getApiKeyPlaintext());
   const log = getLogger().child({ module: 'llm-client', schemaName: opts.schemaName });
 
@@ -62,6 +65,9 @@ export async function generateStructured<T>(opts: GenerateOptions): Promise<T> {
         messages: opts.messages,
         model: cfg.model,
         maxTokens,
+        temperature,
+        topP,
+        topK,
         schemaName: opts.schemaName,
         schema: opts.schema,
         signal: opts.abortSignal,
@@ -115,6 +121,9 @@ export async function generateStructured<T>(opts: GenerateOptions): Promise<T> {
 export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   const cfg = getLlmConfig();
   if (!cfg.provider) throw new Error('LLM not configured');
+  const temperature = cfg.temperatures[cfg.provider];
+  const topP = cfg.topPs[cfg.provider];
+  const topK = TOP_K_CAPABLE_PROVIDERS.includes(cfg.provider) ? cfg.topKs[cfg.provider] : undefined;
 
   const model = cfg.model;
   const adapter = getAdapter(cfg, getApiKeyPlaintext());
@@ -126,6 +135,9 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
     messages: opts.messages,
     model,
     maxTokens: opts.maxTokens ?? 2048,
+    temperature,
+    topP,
+    topK,
     onToken,
     signal: opts.abortSignal,
     llmLog: { chatId: opts.chatId, purpose: opts.purpose },
@@ -167,6 +179,9 @@ export async function resolveToolCalls(opts: {
 }): Promise<{ text: string; messages: AgentMessage[]; llmCallId: string | null; promptTokens: number | null } | null> {
   const cfg = getLlmConfig();
   if (!cfg.provider) return null;
+  const temperature = cfg.temperatures[cfg.provider];
+  const topP = cfg.topPs[cfg.provider];
+  const topK = TOP_K_CAPABLE_PROVIDERS.includes(cfg.provider) ? cfg.topKs[cfg.provider] : undefined;
   const adapter = getAdapter(cfg, getApiKeyPlaintext());
   if (!adapter.call) return null;
 
@@ -183,6 +198,9 @@ export async function resolveToolCalls(opts: {
       messages,
       model: cfg.model,
       maxTokens: 2048,
+      temperature,
+      topP,
+      topK,
       tools,
       signal: abortSignal,
       llmLog: { chatId: opts.chatId ?? null, purpose: 'chat', toolRound: round },

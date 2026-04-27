@@ -28,6 +28,9 @@ export function wrapLlmAdapterWithCallLogging(inner: LlmAdapter, provider: strin
         requestJson: JSON.stringify({
           model: opts.model,
           maxTokens: opts.maxTokens,
+          temperature: opts.temperature,
+          topP: opts.topP,
+          topK: opts.topK,
           messages: opts.messages,
           toolRound: lg.toolRound,
         }),
@@ -69,21 +72,26 @@ export function wrapLlmAdapterWithCallLogging(inner: LlmAdapter, provider: strin
             requestJson: JSON.stringify({
               model: opts.model,
               maxTokens: opts.maxTokens,
+              temperature: opts.temperature,
+              topP: opts.topP,
+              topK: opts.topK,
               schemaName: opts.schemaName,
               messages: opts.messages,
             }),
           });
           const started = Date.now();
           try {
-            const { content } = await inner.generateJson!(stripLlmLog(opts) as AdapterGenerateOptions);
+            const { content, promptTokens, completionTokens } = await inner.generateJson!(
+              stripLlmLog(opts) as AdapterGenerateOptions,
+            );
             finaliseLlmCall(id, {
               responseText: content,
-              promptTokens: null,
-              completionTokens: null,
+              promptTokens,
+              completionTokens,
               latencyMs: Date.now() - started,
               error: null,
             });
-            return { content, llmCallId: id };
+            return { content, promptTokens, completionTokens, llmCallId: id };
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             const partial =
@@ -321,6 +329,9 @@ export function wrapLlmAdapterWithCallLogging(inner: LlmAdapter, provider: strin
             requestJson: JSON.stringify({
               model: opts.model,
               maxTokens: opts.maxTokens,
+              temperature: opts.temperature,
+              topP: opts.topP,
+              topK: opts.topK,
               toolRound: lg.toolRound,
               messages: opts.messages,
             }),

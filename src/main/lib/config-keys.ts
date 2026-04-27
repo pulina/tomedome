@@ -25,6 +25,9 @@ export const CONFIG_KEY = {
 
 const LLM_API_KEY_PREFIX = 'llm_api_key_';
 const RERANKER_MODEL_PREFIX = 'reranker_model_';
+const LLM_TEMPERATURE_PREFIX = 'llm_temperature_';
+const LLM_TOP_P_PREFIX = 'llm_top_p_';
+const LLM_TOP_K_PREFIX = 'llm_top_k_';
 
 export function llmApiKeyStorageKey(provider: LlmProvider): string {
   return `${LLM_API_KEY_PREFIX}${provider}`;
@@ -32,6 +35,18 @@ export function llmApiKeyStorageKey(provider: LlmProvider): string {
 
 export function rerankerModelStorageKey(provider: LlmProvider): string {
   return `${RERANKER_MODEL_PREFIX}${provider}`;
+}
+
+export function llmTemperatureStorageKey(provider: LlmProvider): string {
+  return `${LLM_TEMPERATURE_PREFIX}${provider}`;
+}
+
+export function llmTopPStorageKey(provider: LlmProvider): string {
+  return `${LLM_TOP_P_PREFIX}${provider}`;
+}
+
+export function llmTopKStorageKey(provider: LlmProvider): string {
+  return `${LLM_TOP_K_PREFIX}${provider}`;
 }
 
 export function isLlmApiKeyRowKey(key: string): boolean {

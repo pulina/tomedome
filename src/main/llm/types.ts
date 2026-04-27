@@ -19,6 +19,9 @@ export interface AdapterStreamOptions {
   messages: Message[];
   model: string;
   maxTokens: number;
+  temperature?: number;
+  topP?: number;
+  topK?: number;
   onToken?: (chunk: string) => void;
   signal?: AbortSignal;
   llmLog?: LlmAdapterCallContext;
@@ -36,6 +39,9 @@ export interface AdapterGenerateOptions {
   messages: Message[];
   model: string;
   maxTokens: number;
+  temperature?: number;
+  topP?: number;
+  topK?: number;
   /** Name for the JSON schema (shown to model). */
   schemaName: string;
   /** JSON Schema object that constrains the response shape. */
@@ -47,6 +53,8 @@ export interface AdapterGenerateOptions {
 /** Structured JSON generation result; `llmCallId` is set when using the logging-wrapped adapter. */
 export interface StructuredGenerateJsonResult {
   content: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
   llmCallId?: string;
 }
 
@@ -75,6 +83,9 @@ export interface AdapterCallOptions {
   messages: AgentMessage[];
   model: string;
   maxTokens: number;
+  temperature?: number;
+  topP?: number;
+  topK?: number;
   tools?: ToolDefinition[];
   signal?: AbortSignal;
   llmLog?: LlmAdapterCallContext;

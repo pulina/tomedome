@@ -1,6 +1,14 @@
 import { getDb } from './database';
 import { decryptSensitiveStored, encryptValue, isEncryptionReady } from '../lib/safe-storage';
-import { CONFIG_KEY, isLlmApiKeyRowKey, llmApiKeyStorageKey, rerankerModelStorageKey } from '../lib/config-keys';
+import {
+  CONFIG_KEY,
+  isLlmApiKeyRowKey,
+  llmApiKeyStorageKey,
+  llmTopKStorageKey,
+  llmTopPStorageKey,
+  llmTemperatureStorageKey,
+  rerankerModelStorageKey,
+} from '../lib/config-keys';
 import {
   AbstractConfig,
   DEFAULT_ABSTRACT_DETAIL_LEVEL,
@@ -10,6 +18,7 @@ import {
   DEFAULT_RERANKER_CONFIG,
   LlmConfig,
   LlmProvider,
+  PROVIDER_TEMPERATURE_MAX,
   RerankerConfig,
 } from '@shared/types';
 
@@ -68,6 +77,33 @@ export function getLlmConfig(): LlmConfig {
   for (const p of Object.values(LlmProvider)) {
     if ((getConfigValue(llmApiKeyStorageKey(p)) ?? '').length > 0) keysSet[p] = true;
   }
+  const temperatures: Partial<Record<LlmProvider, number>> = {};
+  for (const p of Object.values(LlmProvider)) {
+    const raw = getConfigValue(llmTemperatureStorageKey(p));
+    if (raw === null) continue;
+    const parsed = parseFloat(raw);
+    if (Number.isFinite(parsed)) {
+      temperatures[p] = Math.min(PROVIDER_TEMPERATURE_MAX[p], Math.max(0, parsed));
+    }
+  }
+  const topPs: Partial<Record<LlmProvider, number>> = {};
+  for (const p of Object.values(LlmProvider)) {
+    const raw = getConfigValue(llmTopPStorageKey(p));
+    if (raw === null) continue;
+    const parsed = parseFloat(raw);
+    if (Number.isFinite(parsed)) {
+      topPs[p] = Math.min(1, Math.max(0, parsed));
+    }
+  }
+  const topKs: Partial<Record<LlmProvider, number>> = {};
+  for (const p of Object.values(LlmProvider)) {
+    const raw = getConfigValue(llmTopKStorageKey(p));
+    if (raw === null) continue;
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      topKs[p] = parsed;
+    }
+  }
 
   return {
     provider,
@@ -79,6 +115,9 @@ export function getLlmConfig(): LlmConfig {
     embeddingPassagePrefix: getConfigValue(CONFIG_KEY.embeddingPassagePrefix) ?? '',
     ollamaBaseUrl: getConfigValue(CONFIG_KEY.llmOllamaBaseUrl) ?? DEFAULT_OLLAMA_URL,
     lmStudioBaseUrl: getConfigValue(CONFIG_KEY.llmLmStudioBaseUrl) ?? DEFAULT_LMSTUDIO_URL,
+    temperatures,
+    topPs,
+    topKs,
   };
 }
 
@@ -106,6 +145,12 @@ export interface LlmConfigInput {
   embeddingPassagePrefix?: string;
   ollamaBaseUrl?: string;
   lmStudioBaseUrl?: string;
+  /** null deletes stored value for provider, falling back to provider native default. */
+  temperature?: number | null;
+  /** null deletes stored value, falling back to provider default. */
+  topP?: number | null;
+  /** null deletes stored value, falling back to provider default. */
+  topK?: number | null;
 }
 
 export function saveLlmConfig(input: LlmConfigInput): void {
@@ -128,6 +173,31 @@ export function saveLlmConfig(input: LlmConfigInput): void {
   }
   if (input.apiKey !== undefined && input.apiKey.length > 0) {
     setConfigValue(llmApiKeyStorageKey(input.provider), input.apiKey);
+  }
+  if (input.temperature !== undefined) {
+    const key = llmTemperatureStorageKey(input.provider);
+    if (input.temperature === null) {
+      getDb().prepare('DELETE FROM config WHERE key = ?').run(key);
+    } else {
+      const clamped = Math.min(PROVIDER_TEMPERATURE_MAX[input.provider], Math.max(0, input.temperature));
+      setConfigValue(key, String(clamped));
+    }
+  }
+  if (input.topP !== undefined) {
+    const key = llmTopPStorageKey(input.provider);
+    if (input.topP === null) {
+      getDb().prepare('DELETE FROM config WHERE key = ?').run(key);
+    } else {
+      setConfigValue(key, String(Math.min(1, Math.max(0, input.topP))));
+    }
+  }
+  if (input.topK !== undefined) {
+    const key = llmTopKStorageKey(input.provider);
+    if (input.topK === null) {
+      getDb().prepare('DELETE FROM config WHERE key = ?').run(key);
+    } else {
+      setConfigValue(key, String(Math.max(0, Math.round(input.topK))));
+    }
   }
 }
 

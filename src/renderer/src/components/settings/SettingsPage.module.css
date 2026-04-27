@@ -201,6 +201,17 @@
   color: var(--color-text-muted);
 }
 
+.helperWarning {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-warning, #e6a817);
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-warning, #e6a817);
+  border-radius: 4px;
+  opacity: 0.85;
+}
+
 .spinner {
   width: 11px;
   height: 11px;
@@ -344,6 +355,39 @@
   color: var(--color-text-muted);
   letter-spacing: 0;
   text-transform: none;
+}
+
+.temperatureRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.temperatureSlider {
+  flex: 1;
+  accent-color: var(--color-accent);
+}
+
+.temperatureInput {
+  width: 64px;
+  padding: 4px 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: right;
+  background: var(--bg-input, var(--surface-input));
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--color-text-primary);
+}
+
+.temperatureLabels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
 }
 
 .buttonDanger {

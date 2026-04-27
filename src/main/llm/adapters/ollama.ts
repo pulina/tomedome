@@ -79,6 +79,10 @@ export class OllamaAdapter implements LlmAdapter {
 
   async generateJson(opts: AdapterGenerateOptions): Promise<StructuredGenerateJsonResult> {
     const url = `${this.baseUrl.replace(/\/$/, '')}/api/chat`;
+    const ollamaOpts: Record<string, number> = {};
+    if (opts.temperature !== undefined) ollamaOpts.temperature = opts.temperature;
+    if (opts.topP !== undefined) ollamaOpts.top_p = opts.topP;
+    if (opts.topK !== undefined) ollamaOpts.top_k = opts.topK;
     const res = await fetch(url, {
       method: 'POST',
       signal: opts.signal,
@@ -88,21 +92,35 @@ export class OllamaAdapter implements LlmAdapter {
         stream: false,
         messages: opts.messages,
         format: opts.schema,
+        ...(Object.keys(ollamaOpts).length > 0 ? { options: ollamaOpts } : {}),
       }),
     });
     if (!res.ok) throw new Error(`Ollama HTTP ${res.status}: ${await safeText(res)}`);
-    const json = await res.json() as { message?: { content?: string | null }; done_reason?: string };
+    const json = await res.json() as {
+      message?: { content?: string | null };
+      done_reason?: string;
+      prompt_eval_count?: number;
+      eval_count?: number;
+    };
     if (json.done_reason === 'length') {
       const partial = json.message?.content ?? null;
       throw new GenerateJsonTruncatedError(opts.maxTokens, partial);
     }
     const c = json.message?.content;
     if (c == null) throw new Error('No content in generateJson response');
-    return { content: c };
+    return {
+      content: c,
+      promptTokens: json.prompt_eval_count ?? null,
+      completionTokens: json.eval_count ?? null,
+    };
   }
 
   async stream(opts: AdapterStreamOptions): Promise<AdapterResult> {
     const url = `${this.baseUrl.replace(/\/$/, '')}/api/chat`;
+    const ollamaOpts: Record<string, number> = {};
+    if (opts.temperature !== undefined) ollamaOpts.temperature = opts.temperature;
+    if (opts.topP !== undefined) ollamaOpts.top_p = opts.topP;
+    if (opts.topK !== undefined) ollamaOpts.top_k = opts.topK;
 
     const res = await fetch(url, {
       method: 'POST',
@@ -112,6 +130,7 @@ export class OllamaAdapter implements LlmAdapter {
         model: opts.model,
         stream: true,
         messages: opts.messages,
+        ...(Object.keys(ollamaOpts).length > 0 ? { options: ollamaOpts } : {}),
       }),
     });
     if (!res.ok || !res.body) {

@@ -146,6 +146,10 @@ export const schemas = {
       embeddingPassagePrefix: { type: 'string' },
       ollamaBaseUrl: { type: 'string' },
       lmStudioBaseUrl: { type: 'string' },
+      // maximum: 2 covers all providers; config-service clamps to PROVIDER_TEMPERATURE_MAX per provider
+      temperature: { anyOf: [{ type: 'number', minimum: 0, maximum: 2 }, { type: 'null' }] },
+      topP: { anyOf: [{ type: 'number', minimum: 0, maximum: 1 }, { type: 'null' }] },
+      topK: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
     },
   },
   configRerankerBody: {

@@ -15,7 +15,12 @@ import {
   DEFAULT_RERANKER_CONFIG,
   LlmConfig,
   LlmProvider,
+  PROVIDER_TOP_K_DEFAULT,
+  PROVIDER_TOP_P_DEFAULT,
+  PROVIDER_TEMPERATURE_DEFAULT,
+  PROVIDER_TEMPERATURE_MAX,
   RERANKER_CAPABLE_PROVIDERS,
+  TOP_K_CAPABLE_PROVIDERS,
   RerankerConfig,
   TestConnectionResult,
 } from '@shared/types';
@@ -72,6 +77,9 @@ interface FormState {
   embeddingPassagePrefix: string;
   ollamaBaseUrl: string;
   lmStudioBaseUrl: string;
+  temperatures: Partial<Record<LlmProvider, number | null>>;
+  topPs: Partial<Record<LlmProvider, number | null>>;
+  topKs: Partial<Record<LlmProvider, number | null>>;
 }
 
 function initialFormFromConfig(cfg: LlmConfig | null): FormState {
@@ -85,6 +93,9 @@ function initialFormFromConfig(cfg: LlmConfig | null): FormState {
       embeddingPassagePrefix: '',
       ollamaBaseUrl: DEFAULT_OLLAMA_URL,
       lmStudioBaseUrl: DEFAULT_LMSTUDIO_URL,
+      temperatures: {},
+      topPs: {},
+      topKs: {},
     };
   }
   return {
@@ -96,6 +107,9 @@ function initialFormFromConfig(cfg: LlmConfig | null): FormState {
     embeddingPassagePrefix: cfg.embeddingPassagePrefix ?? '',
     ollamaBaseUrl: cfg.ollamaBaseUrl || DEFAULT_OLLAMA_URL,
     lmStudioBaseUrl: cfg.lmStudioBaseUrl || DEFAULT_LMSTUDIO_URL,
+    temperatures: { ...(cfg.temperatures ?? {}) },
+    topPs: { ...(cfg.topPs ?? {}) },
+    topKs: { ...(cfg.topKs ?? {}) },
   };
 }
 
@@ -116,9 +130,17 @@ export function SettingsPage() {
     embeddingPassagePrefix: '',
     ollamaBaseUrl: DEFAULT_OLLAMA_URL,
     lmStudioBaseUrl: DEFAULT_LMSTUDIO_URL,
+    temperatures: {},
+    topPs: {},
+    topKs: {},
   });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  // Tracks raw text while the user is typing in the temperature number input.
+  // null means "not being edited — derive display value from form state".
+  const [tempRawInput, setTempRawInput] = useState<string | null>(null);
+  const [topPRawInput, setTopPRawInput] = useState<string | null>(null);
+  const [topKRawInput, setTopKRawInput] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
 
   const [abstractForm, setAbstractForm] = useState<AbstractConfig>({
@@ -390,6 +412,19 @@ export function SettingsPage() {
   const meta = form.provider ? PROVIDER_META[form.provider] : null;
   const needsKey = meta?.needsKey ?? false;
   const keyAlreadySet = form.provider ? (savedConfig?.keysSet?.[form.provider] ?? false) : false;
+  const currentTemp = form.provider ? (form.temperatures[form.provider] ?? null) : null;
+  const useDefaultTemp = currentTemp === null;
+  const tempMax = form.provider ? PROVIDER_TEMPERATURE_MAX[form.provider] : 2.0;
+  const tempDefault = form.provider ? PROVIDER_TEMPERATURE_DEFAULT[form.provider] : 1.0;
+  const currentTopP = form.provider ? (form.topPs[form.provider] ?? null) : null;
+  const useDefaultTopP = currentTopP === null;
+  const topPDefault = form.provider ? PROVIDER_TOP_P_DEFAULT[form.provider] : 1.0;
+  const showTopK = form.provider ? TOP_K_CAPABLE_PROVIDERS.includes(form.provider) : false;
+  const currentTopK = form.provider ? (form.topKs[form.provider] ?? null) : null;
+  const useDefaultTopK = currentTopK === null;
+  const topKDefault = form.provider ? PROVIDER_TOP_K_DEFAULT[form.provider] : 40;
+  const showAnthropicSamplingWarning =
+    form.provider === LlmProvider.Anthropic && currentTemp !== null && currentTopP !== null;
 
   const canSubmit =
     form.provider !== null &&
@@ -413,6 +448,9 @@ export function SettingsPage() {
         apiKey: form.apiKey.length > 0 ? form.apiKey : undefined,
         ollamaBaseUrl: form.provider === LlmProvider.Ollama ? form.ollamaBaseUrl : undefined,
         lmStudioBaseUrl: form.provider === LlmProvider.LmStudio ? form.lmStudioBaseUrl : undefined,
+        temperature: currentTemp,
+        topP: currentTopP,
+        topK: currentTopK,
       });
       if (RERANKER_CAPABLE_PROVIDERS.includes(form.provider)) {
         const savedReranker = await configApi.saveRerankerConfig(rerankerForm);
@@ -660,7 +698,8 @@ export function SettingsPage() {
                   Small models are tempting because they are cheap to run, but many are too limited for
                   writing abstracts, using tools, and following rules reliably. That can produce
                   unpredictable results: empty replies, garbled output, or errors. Prefer a larger
-                  capable model when quality and stability matter.
+                  capable model when quality and stability matter. If errors persist, try lowering
+                  temperature to make outputs more deterministic.
                 </p>
               </div>
             </div>
@@ -738,6 +777,229 @@ export function SettingsPage() {
               </div>
             )}
           </div>
+
+          {form.provider && (
+            <div className={styles.section}>
+              <div className={styles.rerankerHeader}>
+                Temperature
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={useDefaultTemp}
+                    onChange={(e) => {
+                      const next = e.target.checked ? null : tempDefault;
+                      setForm((f) => ({
+                        ...f,
+                        temperatures: { ...f.temperatures, [f.provider!]: next },
+                      }));
+                    }}
+                  />
+                  Use model default
+                </label>
+              </div>
+              {!useDefaultTemp && (
+                <>
+                  <div className={styles.helper}>
+                    Controls output randomness. Lower = more deterministic, higher = more creative.
+                    Higher values also reduce rule obedience and strictness, so outputs are more error-prone.
+                    {form.provider === LlmProvider.OpenAI && (
+                      <> Note: o-series reasoning models ignore this setting.</>
+                    )}
+                  </div>
+                  <div className={styles.temperatureRow}>
+                    <input
+                      type="range"
+                      className={styles.temperatureSlider}
+                      min={0}
+                      max={tempMax}
+                      step={0.01}
+                      value={currentTemp ?? tempDefault}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!Number.isFinite(val)) return;
+                        setTempRawInput(null);
+                        setForm((f) => ({
+                          ...f,
+                          temperatures: { ...f.temperatures, [f.provider!]: val },
+                        }));
+                      }}
+                    />
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className={styles.temperatureInput}
+                      value={tempRawInput ?? (currentTemp ?? tempDefault).toFixed(2)}
+                      onChange={(e) => setTempRawInput(e.target.value)}
+                      onBlur={() => {
+                        const val = parseFloat(tempRawInput ?? '');
+                        setTempRawInput(null);
+                        if (!Number.isFinite(val)) return;
+                        const clamped = Math.min(tempMax, Math.max(0, val));
+                        setForm((f) => ({
+                          ...f,
+                          temperatures: { ...f.temperatures, [f.provider!]: clamped },
+                        }));
+                      }}
+                    />
+                  </div>
+                  <div className={styles.temperatureLabels}>
+                    <span>0 — deterministic</span>
+                    <span>{tempMax.toFixed(1)} — max</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {form.provider && (
+            <div className={styles.section}>
+              <div className={styles.rerankerHeader}>
+                Top-P
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={useDefaultTopP}
+                    onChange={(e) => {
+                      const next = e.target.checked ? null : topPDefault;
+                      setTopPRawInput(null);
+                      setForm((f) => ({
+                        ...f,
+                        topPs: { ...f.topPs, [f.provider!]: next },
+                      }));
+                    }}
+                  />
+                  Use model default
+                </label>
+              </div>
+              {showAnthropicSamplingWarning && (
+                <div className={styles.helperWarning}>
+                  Anthropic recommends using either temperature or top_p, not both. Results may
+                  be unpredictable when both are set.
+                </div>
+              )}
+              {!useDefaultTopP && (
+                <>
+                  <div className={styles.helper}>
+                    Nucleus sampling: only tokens comprising the top P probability mass are
+                    considered. Lower values make output more focused; 1.0 disables the filter.
+                  </div>
+                  <div className={styles.temperatureRow}>
+                    <input
+                      type="range"
+                      className={styles.temperatureSlider}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={currentTopP ?? topPDefault}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!Number.isFinite(val)) return;
+                        setTopPRawInput(null);
+                        setForm((f) => ({
+                          ...f,
+                          topPs: { ...f.topPs, [f.provider!]: val },
+                        }));
+                      }}
+                    />
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className={styles.temperatureInput}
+                      value={topPRawInput ?? (currentTopP ?? topPDefault).toFixed(2)}
+                      onChange={(e) => setTopPRawInput(e.target.value)}
+                      onBlur={() => {
+                        const val = parseFloat(topPRawInput ?? '');
+                        setTopPRawInput(null);
+                        if (!Number.isFinite(val)) return;
+                        const clamped = Math.min(1, Math.max(0, val));
+                        setForm((f) => ({
+                          ...f,
+                          topPs: { ...f.topPs, [f.provider!]: clamped },
+                        }));
+                      }}
+                    />
+                  </div>
+                  <div className={styles.temperatureLabels}>
+                    <span>0 — focused</span>
+                    <span>1.0 — off</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {form.provider && showTopK && (
+            <div className={styles.section}>
+              <div className={styles.rerankerHeader}>
+                Top-K
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={useDefaultTopK}
+                    onChange={(e) => {
+                      const next = e.target.checked ? null : topKDefault;
+                      setTopKRawInput(null);
+                      setForm((f) => ({
+                        ...f,
+                        topKs: { ...f.topKs, [f.provider!]: next },
+                      }));
+                    }}
+                  />
+                  Use model default
+                </label>
+              </div>
+              {!useDefaultTopK && (
+                <>
+                  <div className={styles.helper}>
+                    Only the top K tokens by probability are considered at each step. 0 disables
+                    the filter. Lower values increase focus; higher values increase variety.
+                    {form.provider === LlmProvider.OpenRouter && (
+                      <> Forwarded to the underlying model; ignored by models that don&apos;t support it.</>
+                    )}
+                  </div>
+                  <div className={styles.temperatureRow}>
+                    <input
+                      type="range"
+                      className={styles.temperatureSlider}
+                      min={0}
+                      max={200}
+                      step={1}
+                      value={Math.min(200, currentTopK ?? topKDefault)}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!Number.isFinite(val)) return;
+                        setTopKRawInput(null);
+                        setForm((f) => ({
+                          ...f,
+                          topKs: { ...f.topKs, [f.provider!]: val },
+                        }));
+                      }}
+                    />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className={styles.temperatureInput}
+                      value={topKRawInput ?? String(currentTopK ?? topKDefault)}
+                      onChange={(e) => setTopKRawInput(e.target.value)}
+                      onBlur={() => {
+                        const val = parseInt(topKRawInput ?? '', 10);
+                        setTopKRawInput(null);
+                        if (!Number.isFinite(val) || val < 0) return;
+                        setForm((f) => ({
+                          ...f,
+                          topKs: { ...f.topKs, [f.provider!]: val },
+                        }));
+                      }}
+                    />
+                  </div>
+                  <div className={styles.temperatureLabels}>
+                    <span>0 — disabled</span>
+                    <span>200</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {form.provider !== LlmProvider.Anthropic && (
             <div className={styles.section}>

@@ -25,6 +25,9 @@ interface SaveBody {
   embeddingPassagePrefix?: string;
   ollamaBaseUrl?: string;
   lmStudioBaseUrl?: string;
+  temperature?: number | null;
+  topP?: number | null;
+  topK?: number | null;
 }
 
 interface ModelsBody {
@@ -86,6 +89,24 @@ export async function registerConfigRoutes(fastify: FastifyInstance): Promise<vo
         apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
         ollamaBaseUrl: typeof body.ollamaBaseUrl === 'string' ? body.ollamaBaseUrl : undefined,
         lmStudioBaseUrl: typeof body.lmStudioBaseUrl === 'string' ? body.lmStudioBaseUrl : undefined,
+        temperature:
+          typeof body.temperature === 'number'
+            ? body.temperature
+            : body.temperature === null
+              ? null
+              : undefined,
+        topP:
+          typeof body.topP === 'number'
+            ? body.topP
+            : body.topP === null
+              ? null
+              : undefined,
+        topK:
+          typeof body.topK === 'number'
+            ? body.topK
+            : body.topK === null
+              ? null
+              : undefined,
       });
       return getLlmConfig();
     },

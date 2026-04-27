@@ -19,6 +19,12 @@ export interface LlmConfig {
   embeddingPassagePrefix: string;
   ollamaBaseUrl: string;
   lmStudioBaseUrl: string;
+  /** Per-provider temperature; missing means omit from request (provider default). */
+  temperatures: Partial<Record<LlmProvider, number>>;
+  /** Per-provider top_p; missing means omit from request (provider default). */
+  topPs: Partial<Record<LlmProvider, number>>;
+  /** Per-provider top_k; missing means omit from request (provider default). */
+  topKs: Partial<Record<LlmProvider, number>>;
 }
 
 export interface LlmStatus {
@@ -151,6 +157,46 @@ export const RERANKER_CAPABLE_PROVIDERS: LlmProvider[] = [
   LlmProvider.Ollama,
   LlmProvider.OpenRouter,
 ];
+
+export const PROVIDER_TEMPERATURE_MAX: Record<LlmProvider, number> = {
+  [LlmProvider.Anthropic]: 1.0,
+  [LlmProvider.OpenAI]: 2.0,
+  [LlmProvider.OpenRouter]: 2.0,
+  [LlmProvider.Ollama]: 2.0,
+  [LlmProvider.LmStudio]: 1.0,
+};
+
+export const PROVIDER_TEMPERATURE_DEFAULT: Record<LlmProvider, number> = {
+  [LlmProvider.Anthropic]: 1.0,
+  [LlmProvider.OpenAI]: 1.0,
+  [LlmProvider.OpenRouter]: 1.0,
+  [LlmProvider.Ollama]: 0.8,
+  [LlmProvider.LmStudio]: 0.7,
+};
+
+/** Providers that support the top_k sampling parameter. */
+export const TOP_K_CAPABLE_PROVIDERS: LlmProvider[] = [
+  LlmProvider.Anthropic,
+  LlmProvider.OpenRouter,
+  LlmProvider.Ollama,
+  LlmProvider.LmStudio,
+];
+
+export const PROVIDER_TOP_P_DEFAULT: Record<LlmProvider, number> = {
+  [LlmProvider.Anthropic]: 0.95,
+  [LlmProvider.OpenAI]: 1.0,
+  [LlmProvider.OpenRouter]: 1.0,
+  [LlmProvider.Ollama]: 0.9,
+  [LlmProvider.LmStudio]: 0.95,
+};
+
+export const PROVIDER_TOP_K_DEFAULT: Record<LlmProvider, number> = {
+  [LlmProvider.Anthropic]: 40,
+  [LlmProvider.OpenAI]: 40,
+  [LlmProvider.OpenRouter]: 40,
+  [LlmProvider.Ollama]: 40,
+  [LlmProvider.LmStudio]: 40,
+};
 
 export interface RerankerConfig {
   /** Cross-encoder model name, stored per-provider (e.g. bge-reranker-v2-m3 / cohere/rerank-v3.5). */

@@ -222,7 +222,6 @@ licenses/        # Redistributed font license texts (SIL OFL)
 
 Planned and in-flight work:
 
-- **Reranker support** for lmstudio and ollama
 - **Reader-scoped filtering** — Narrow RAG and answers by reading progress: exclude whole books or individual chapters from context while still respecting spoiler boundaries for what you have not read.
 - **Full-text search as a tool** — Expose SQLite FTS (or equivalent) as an LLM-callable tool for precise lexical lookups alongside embedding retrieval.
 - **Entity resolution and wiki** — Combine LLM-based named-entity extraction with fuzzy matching (e.g. Levenshtein) to merge aliases and typos into a stable entity dictionary or in-app wiki.

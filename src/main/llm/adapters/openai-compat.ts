@@ -71,6 +71,9 @@ export class OpenAICompatAdapter implements LlmAdapter {
         model: opts.model,
         stream: false,
         max_tokens: opts.maxTokens,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+        ...(opts.topP !== undefined ? { top_p: opts.topP } : {}),
+        ...(opts.topK !== undefined ? { top_k: opts.topK } : {}),
         messages: opts.messages,
         response_format: {
           type: 'json_schema',
@@ -81,6 +84,7 @@ export class OpenAICompatAdapter implements LlmAdapter {
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await safeText(res)}`);
     const json = await res.json() as {
       choices: Array<{ message: { content?: string | null }; finish_reason?: string }>;
+      usage?: { prompt_tokens: number; completion_tokens: number };
     };
     const choice = json.choices[0];
     if (choice?.finish_reason === 'length') {
@@ -89,7 +93,11 @@ export class OpenAICompatAdapter implements LlmAdapter {
     }
     const content = choice?.message?.content;
     if (content == null) throw new Error('No content in generateJson response');
-    return { content };
+    return {
+      content,
+      promptTokens: json.usage?.prompt_tokens ?? null,
+      completionTokens: json.usage?.completion_tokens ?? null,
+    };
   }
 
   async call(opts: AdapterCallOptions): Promise<CallResult> {
@@ -130,6 +138,9 @@ export class OpenAICompatAdapter implements LlmAdapter {
         model: opts.model,
         stream: false,
         max_tokens: opts.maxTokens,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+        ...(opts.topP !== undefined ? { top_p: opts.topP } : {}),
+        ...(opts.topK !== undefined ? { top_k: opts.topK } : {}),
         messages: openaiMessages,
         ...(tools?.length ? { tools } : {}),
       }),
@@ -182,7 +193,11 @@ export class OpenAICompatAdapter implements LlmAdapter {
         model: opts.model,
         stream: true,
         max_tokens: opts.maxTokens,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+        ...(opts.topP !== undefined ? { top_p: opts.topP } : {}),
+        ...(opts.topK !== undefined ? { top_k: opts.topK } : {}),
         messages: opts.messages,
+        stream_options: { include_usage: true },
       }),
     });
     if (!res.ok || !res.body) {
