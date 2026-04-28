@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-04-28
+### Fixed
+- **"Use model default" not persisting** for temperature, top-p, and top-k: AJV was coercing `null → 0` when validating `anyOf: [number, null]` body schemas, causing the save to write `0` to the DB instead of deleting the key; parameters now correctly clear and are omitted from API requests.
+
+### Changed
+- **OpenAI-compatible adapter**: GPT and o-series models now send `max_completion_tokens` instead of `max_tokens`, which is required by the OpenAI API for these model families.
+- **Reasoning model UX** (o1/o3/o4 on OpenAI and OpenRouter): removed silent suppression of sampling parameters in the adapter; Settings now shows a warning when a potential reasoning model is detected and automatically resets temperature/top-p to model defaults on model selection — custom values can still be set but the user is informed of the risk.
+
 ## [0.1.8] - 2026-04-27
 ### Added
 - **Semantic search tool** (`search_semantic`): the model can trigger an embedding search with a self-formulated query, solving follow-up questions where the user's literal message embeds poorly. Complements `search_text` (verbatim keyword hits) with conceptual/descriptive retrieval. Returns `null` gracefully when no embedding model is configured.
@@ -85,7 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stats and logs page for monitoring ingestion jobs and LLM call history
 - Cross-platform builds: macOS (arm64, x64), Windows (x64), Linux (deb, rpm)
 
-[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/pulina/tomedome/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/pulina/tomedome/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/pulina/tomedome/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/pulina/tomedome/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/pulina/tomedome/compare/v0.1.5...v0.1.6

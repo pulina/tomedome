@@ -147,9 +147,10 @@ export const schemas = {
       ollamaBaseUrl: { type: 'string' },
       lmStudioBaseUrl: { type: 'string' },
       // maximum: 2 covers all providers; config-service clamps to PROVIDER_TEMPERATURE_MAX per provider
-      temperature: { anyOf: [{ type: 'number', minimum: 0, maximum: 2 }, { type: 'null' }] },
-      topP: { anyOf: [{ type: 'number', minimum: 0, maximum: 1 }, { type: 'null' }] },
-      topK: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+      // Use type array (not anyOf) to avoid AJV coercing null→0 when number schema is tried first.
+      temperature: { type: ['number', 'null'], minimum: 0, maximum: 2 },
+      topP: { type: ['number', 'null'], minimum: 0, maximum: 1 },
+      topK: { type: ['integer', 'null'], minimum: 0 },
     },
   },
   configRerankerBody: {

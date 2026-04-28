@@ -23,6 +23,21 @@ export class OpenAICompatAdapter implements LlmAdapter {
     protected readonly apiKey: string,
   ) {}
 
+  // OpenAI GPT/o-series (including OpenRouter-routed variants) reject `max_tokens`
+  // and require `max_completion_tokens`.
+  private getTokenLimitParam(model: string, maxTokens: number): Record<string, number> {
+    const bare = model.toLowerCase().split('/').at(-1) ?? model.toLowerCase();
+    const usesCompletionTokens =
+      bare.startsWith('gpt')
+      || bare.startsWith('chatgpt')
+      || bare.startsWith('o1')
+      || bare.startsWith('o3')
+      || bare.startsWith('o4');
+    return usesCompletionTokens
+      ? { max_completion_tokens: maxTokens }
+      : { max_tokens: maxTokens };
+  }
+
   async listModels(signal?: AbortSignal): Promise<string[]> {
     const url = `${this.baseUrl.replace(/\/$/, '')}/v1/models`;
     const headers: Record<string, string> = {};
@@ -70,7 +85,7 @@ export class OpenAICompatAdapter implements LlmAdapter {
       body: JSON.stringify({
         model: opts.model,
         stream: false,
-        max_tokens: opts.maxTokens,
+        ...this.getTokenLimitParam(opts.model, opts.maxTokens),
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.topP !== undefined ? { top_p: opts.topP } : {}),
         ...(opts.topK !== undefined ? { top_k: opts.topK } : {}),
@@ -137,7 +152,7 @@ export class OpenAICompatAdapter implements LlmAdapter {
       body: JSON.stringify({
         model: opts.model,
         stream: false,
-        max_tokens: opts.maxTokens,
+        ...this.getTokenLimitParam(opts.model, opts.maxTokens),
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.topP !== undefined ? { top_p: opts.topP } : {}),
         ...(opts.topK !== undefined ? { top_k: opts.topK } : {}),
@@ -192,7 +207,7 @@ export class OpenAICompatAdapter implements LlmAdapter {
       body: JSON.stringify({
         model: opts.model,
         stream: true,
-        max_tokens: opts.maxTokens,
+        ...this.getTokenLimitParam(opts.model, opts.maxTokens),
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.topP !== undefined ? { top_p: opts.topP } : {}),
         ...(opts.topK !== undefined ? { top_k: opts.topK } : {}),

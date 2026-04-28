@@ -57,6 +57,11 @@ const PROVIDER_META: Record<LlmProvider, { name: string; description: string; ne
 
 const OTHER_VALUE = '__other__';
 
+function mayRestrictSampling(model: string): boolean {
+  const bare = model.toLowerCase().split('/').at(-1) ?? '';
+  return bare.startsWith('gpt') || bare.startsWith('chatgpt') || bare.startsWith('o1') || bare.startsWith('o3') || bare.startsWith('o4');
+}
+
 const PROVIDERS_WITH_SPENDING_TIP = new Set<LlmProvider>([
   LlmProvider.Anthropic,
   LlmProvider.OpenAI,
@@ -391,7 +396,18 @@ export function SettingsPage() {
       return;
     }
     setCustomModel(false);
-    setForm((f) => ({ ...f, model: value }));
+    setForm((f) => {
+      const next = { ...f, model: value };
+      if (
+        f.provider &&
+        (f.provider === LlmProvider.OpenAI || f.provider === LlmProvider.OpenRouter) &&
+        mayRestrictSampling(value)
+      ) {
+        next.temperatures = { ...f.temperatures, [f.provider]: null };
+        next.topPs = { ...f.topPs, [f.provider]: null };
+      }
+      return next;
+    });
 
     // Trigger model load in background for local providers
     if (form.provider === LlmProvider.Ollama && ollamaUrlHealth !== 'ok') return;
@@ -425,6 +441,10 @@ export function SettingsPage() {
   const topKDefault = form.provider ? PROVIDER_TOP_K_DEFAULT[form.provider] : 40;
   const showAnthropicSamplingWarning =
     form.provider === LlmProvider.Anthropic && currentTemp !== null && currentTopP !== null;
+  const showReasoningModelWarning =
+    (form.provider === LlmProvider.OpenAI || form.provider === LlmProvider.OpenRouter) &&
+    mayRestrictSampling(form.model) &&
+    (currentTemp !== null || currentTopP !== null);
 
   const canSubmit =
     form.provider !== null &&
@@ -778,6 +798,14 @@ export function SettingsPage() {
             )}
           </div>
 
+          {showReasoningModelWarning && (
+            <div className={styles.helperWarning}>
+              GPT and o-series models may reject custom temperature or top_p values and return an
+              API error. Sampling parameters have been reset to model defaults. You can still set
+              custom values, but confirm they are supported by this model.
+            </div>
+          )}
+
           {form.provider && (
             <div className={styles.section}>
               <div className={styles.rerankerHeader}>
@@ -802,9 +830,6 @@ export function SettingsPage() {
                   <div className={styles.helper}>
                     Controls output randomness. Lower = more deterministic, higher = more creative.
                     Higher values also reduce rule obedience and strictness, so outputs are more error-prone.
-                    {form.provider === LlmProvider.OpenAI && (
-                      <> Note: o-series reasoning models ignore this setting.</>
-                    )}
                   </div>
                   <div className={styles.temperatureRow}>
                     <input
