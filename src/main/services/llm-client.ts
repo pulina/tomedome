@@ -36,6 +36,7 @@ export interface GenerateOptions {
   maxTokens?: number;
   abortSignal?: AbortSignal;
   purpose?: LlmCallPurpose;
+  chatId?: string | null;
 }
 
 export type { AgentMessage, ToolDefinition, ToolCall };
@@ -71,7 +72,7 @@ export async function generateStructured<T>(opts: GenerateOptions): Promise<T> {
         schemaName: opts.schemaName,
         schema: opts.schema,
         signal: opts.abortSignal,
-        llmLog: { chatId: null, purpose },
+        llmLog: { chatId: opts.chatId ?? null, purpose },
       });
       raw = gen.content;
       llmCallId = gen.llmCallId;
@@ -134,7 +135,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   const r = await adapter.stream({
     messages: opts.messages,
     model,
-    maxTokens: opts.maxTokens ?? 2048,
+    maxTokens: opts.maxTokens ?? 8192,
     temperature,
     topP,
     topK,
@@ -197,7 +198,7 @@ export async function resolveToolCalls(opts: {
     const result = await adapter.call({
       messages,
       model: cfg.model,
-      maxTokens: 2048,
+      maxTokens: 8192,
       temperature,
       topP,
       topK,

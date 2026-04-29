@@ -1,4 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties, HTMLAttributes } from 'react';
+import {
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useLocation } from 'react-router-dom';
 import { ApiError } from '../api/api-error';
 import { bookApi } from '../api/book-api';
@@ -11,7 +23,8 @@ import { EmbeddingsInspector } from '../components/EmbeddingsInspector/Embedding
 import { ExportModal } from '../components/ExportModal/ExportModal';
 import { ImportWizard } from '../components/ImportWizard/ImportWizard';
 import { useSelectedSeries } from '../hooks/useSelectedSeries';
-import type { Book, ImportResult, Series } from '../../../shared/types';
+import { useJobs } from '../hooks/useJobs';
+import type { Book, ImportResult, Job, JobType, Series } from '../../../shared/types';
 import {
   bookEmbeddingProfileMismatch,
   bookStoredEmbeddingProfileDiffers,
@@ -48,8 +61,31 @@ export function LibraryPage() {
   const [currentEmbeddingPassagePrefix, setCurrentEmbeddingPassagePrefix] = useState('');
 
   const { selectedSeriesId, refresh: refreshSeries } = useSelectedSeries();
+  const { jobs } = useJobs();
   const sseCloseRef = useRef<(() => void) | null>(null);
   const location = useLocation();
+
+  // Jobs arrive newest-first. Record the latest job per (bookId, type), then show
+  // a "continue" button only when that latest run actually errored AND the book's
+  // own abstractedAt / embeddedAt hasn't been updated since — which would mean a
+  // later job (e.g. "Embeddings + abstracts") already completed the work.
+  const latestJobByBookType = new Map<string, Job>();
+  for (const job of jobs) {
+    const key = `${job.bookId}:${job.type}`;
+    if (!latestJobByBookType.has(key)) latestJobByBookType.set(key, job);
+  }
+  const erroredJobByBook = new Map<string, JobType>();
+  for (const job of latestJobByBookType.values()) {
+    if (job.status !== 'error' || !job.bookId) continue;
+    const book = books.find((b) => b.id === job.bookId);
+    if (!book) continue;
+    // If the book's relevant timestamp is newer than the job error, the work was
+    // completed by another run — don't offer resume.
+    const successAt =
+      job.type === 'abstract_generation' ? book.abstractedAt : book.embeddedAt;
+    if (successAt && successAt > job.updatedAt) continue;
+    erroredJobByBook.set(job.bookId, job.type);
+  }
 
   const load = useCallback(async () => {
     const [list, series, cfg] = await Promise.all([
@@ -113,6 +149,16 @@ export function LibraryPage() {
     }
   }
 
+  async function handleResumeJob(bookId: string, type: JobType) {
+    try {
+      await bookApi.enqueueJob(bookId, type, { resume: true });
+      void load();
+    } catch (e) {
+      if (e instanceof ApiError) window.alert(e.message);
+      else throw e;
+    }
+  }
+
   async function handleEnqueueJob(bookId: string, type: 'abstract_generation' | 'embedding_generation') {
     if (type === 'abstract_generation') {
       const book = books.find((b) => b.id === bookId);
@@ -146,6 +192,48 @@ export function LibraryPage() {
     } catch (e) {
       if (e instanceof ApiError) window.alert(e.message);
       else throw e;
+    }
+  }
+
+  async function handleUpdateBook(
+    bookId: string,
+    patch: {
+      title?: string;
+      author?: string | null;
+      year?: number | null;
+      genre?: string | null;
+      language?: string | null;
+    },
+  ) {
+    const updated = await bookApi.update(bookId, patch);
+    setBooks((prev) => {
+      const mapped = prev.map((b) => (b.id === bookId ? updated : b));
+      return [...mapped].sort((a, b) => {
+        if (a.seriesId !== b.seriesId) return 0;
+        return (a.seriesOrder ?? 999999) - (b.seriesOrder ?? 999999);
+      });
+    });
+  }
+
+  async function handleReorderSeries(seriesId: string, bookIds: string[]) {
+    try {
+      await seriesApi.setBookOrder(seriesId, bookIds);
+      setBooks((prev) =>
+        [...prev]
+          .map((b) => {
+            if (b.seriesId !== seriesId) return b;
+            const idx = bookIds.indexOf(b.id);
+            if (idx < 0) return b;
+            return { ...b, seriesOrder: idx + 1 };
+          })
+          .sort((a, b) => {
+            if (a.seriesId !== b.seriesId) return 0;
+            return (a.seriesOrder ?? 999999) - (b.seriesOrder ?? 999999);
+          }),
+      );
+    } catch (e) {
+      if (e instanceof ApiError) window.alert(e.message);
+      void load();
     }
   }
 
@@ -226,6 +314,9 @@ export function LibraryPage() {
     } else {
       seriesGroups.push({ seriesId: book.seriesId, seriesTitle: book.seriesTitle, books: [book] });
     }
+  }
+  for (const g of seriesGroups) {
+    g.books.sort((a, b) => (a.seriesOrder ?? 999999) - (b.seriesOrder ?? 999999));
   }
 
   const abstractsBook = books.find((b) => b.id === abstractsBookId);
@@ -393,25 +484,28 @@ export function LibraryPage() {
                 {seriesData?.abstract && (
                   <p className={styles.seriesAbstract}>{seriesData.abstract}</p>
                 )}
-                <div className={styles.bookGrid}>
-                  {group.books.map((book) => (
-                    <BookCard
-                      key={book.id}
-                      book={book}
-                      bookHasRag={bookHasRag(book, currentEmbeddingModel, currentEmbeddingPassagePrefix)}
-                      currentEmbeddingModel={currentEmbeddingModel}
-                      currentEmbeddingPassagePrefix={currentEmbeddingPassagePrefix}
-                      deleting={deleting === book.id}
-                      onDelete={() => handleDelete(book.id)}
-                      onViewAbstracts={() => setAbstractsBookId(book.id)}
-                      onRetryAbstracts={() => handleEnqueueJob(book.id, 'abstract_generation')}
-                      onRetryEmbedding={() => handleEnqueueJob(book.id, 'embedding_generation')}
-                      onInspectEmbeddings={() => setInspectorBookId(book.id)}
-                      onExport={() => setExportTarget({ kind: 'book', id: book.id, title: book.title })}
-                      onSetEmbeddingOverride={(v) => void handleSetEmbeddingOverride(book.id, v)}
-                    />
-                  ))}
-                </div>
+                <SeriesBookGrid
+                  seriesId={group.seriesId}
+                  books={group.books}
+                  volCount={volCount}
+                  onReorder={handleReorderSeries}
+                  getBookCardExtras={(book) => ({
+                    bookHasRag: bookHasRag(book, currentEmbeddingModel, currentEmbeddingPassagePrefix),
+                    currentEmbeddingModel,
+                    currentEmbeddingPassagePrefix,
+                    deleting: deleting === book.id,
+                    erroredJobType: erroredJobByBook.get(book.id),
+                    onDelete: () => handleDelete(book.id),
+                    onViewAbstracts: () => setAbstractsBookId(book.id),
+                    onRetryAbstracts: () => handleEnqueueJob(book.id, 'abstract_generation'),
+                    onRetryEmbedding: () => handleEnqueueJob(book.id, 'embedding_generation'),
+                    onResumeJob: (type) => void handleResumeJob(book.id, type),
+                    onInspectEmbeddings: () => setInspectorBookId(book.id),
+                    onExport: () => setExportTarget({ kind: 'book', id: book.id, title: book.title }),
+                    onSetEmbeddingOverride: (v) => void handleSetEmbeddingOverride(book.id, v),
+                    onUpdate: (patch) => handleUpdateBook(book.id, patch),
+                  })}
+                />
               </div>
             );
           })}
@@ -488,24 +582,78 @@ function CoverageWarnGlyph() {
   );
 }
 
-function BookCard({
-  book, bookHasRag, currentEmbeddingModel, currentEmbeddingPassagePrefix, deleting, onDelete, onViewAbstracts,
-  onRetryAbstracts, onRetryEmbedding, onInspectEmbeddings, onExport, onSetEmbeddingOverride,
-}: {
+type BookCardProps = {
   book: Book;
+  seriesBookCount: number;
   bookHasRag: boolean;
   currentEmbeddingModel: string | null;
   currentEmbeddingPassagePrefix: string;
   deleting: boolean;
+  erroredJobType?: JobType;
   onDelete: () => void;
   onViewAbstracts: () => void;
   onRetryAbstracts: () => void;
   onRetryEmbedding: () => void;
+  onResumeJob: (type: JobType) => void;
   onInspectEmbeddings: () => void;
   onExport: () => void;
   onSetEmbeddingOverride: (override: boolean) => void;
-}) {
+  onUpdate: (patch: {
+    title?: string;
+    author?: string | null;
+    year?: number | null;
+    genre?: string | null;
+    language?: string | null;
+  }) => Promise<void>;
+  dragHandleProps?: HTMLAttributes<HTMLButtonElement>;
+};
+
+function BookCard({
+  book, seriesBookCount, bookHasRag, currentEmbeddingModel, currentEmbeddingPassagePrefix, deleting,
+  erroredJobType, onDelete, onViewAbstracts,
+  onRetryAbstracts, onRetryEmbedding, onResumeJob, onInspectEmbeddings, onExport, onSetEmbeddingOverride,
+  onUpdate,
+  dragHandleProps,
+}: BookCardProps) {
   const [confirmingOverride, setConfirmingOverride] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAuthor, setEditAuthor] = useState('');
+  const [editYear, setEditYear] = useState('');
+  const [editGenre, setEditGenre] = useState('');
+  const [editLanguage, setEditLanguage] = useState('');
+
+  function openEdit() {
+    setEditTitle(book.title);
+    setEditAuthor(book.author ?? '');
+    setEditYear(book.year ? String(book.year) : '');
+    setEditGenre(book.genre ?? '');
+    setEditLanguage(book.language ?? '');
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    const title = editTitle.trim();
+    if (!title) return;
+    setSaving(true);
+    try {
+      await onUpdate({
+        title,
+        author: editAuthor.trim() || null,
+        year: editYear.trim() ? parseInt(editYear.trim(), 10) || null : null,
+        genre: editGenre.trim() || null,
+        language: editLanguage.trim() || null,
+      });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+  }
   const hasAbstracts = !!book.abstractedAt;
   const hasEmbeddings = !!book.embeddedAt;
   const showRagStrike = book.chunkCount === 0 || !bookHasRag;
@@ -520,11 +668,87 @@ function BookCard({
     bookEmbeddingProfileMismatch(book, currentEmbeddingModel, currentEmbeddingPassagePrefix);
 
   return (
-    <div className={styles.bookCard}>
-      <div className={styles.bookTitle}>{book.title}</div>
-      <div className={styles.bookMeta}>
-        {[book.author, book.year, book.genre].filter(Boolean).join(' · ')}
-      </div>
+    <div
+      className={`${styles.bookCard} ${
+        dragHandleProps && !editing ? styles.bookCardWithDragHandle : ''
+      }`}
+    >
+      {!editing && dragHandleProps && (
+        <button
+          type="button"
+          className={styles.dragHandle}
+          title="Drag to reorder in series"
+          {...dragHandleProps}
+        >
+          ⋮⋮
+        </button>
+      )}
+      {editing ? (
+        <form
+          className={styles.bookEditForm}
+          onSubmit={(e) => { e.preventDefault(); void saveEdit(); }}
+        >
+          <input
+            className={styles.bookEditInput}
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            placeholder="Title"
+            autoFocus
+            onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}
+          />
+          <input
+            className={styles.bookEditInput}
+            value={editAuthor}
+            onChange={(e) => setEditAuthor(e.target.value)}
+            placeholder="Author"
+            onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}
+          />
+          <div className={styles.bookEditRow}>
+            <input
+              className={styles.bookEditInput}
+              value={editYear}
+              onChange={(e) => setEditYear(e.target.value)}
+              placeholder="Year"
+              type="number"
+              onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}
+            />
+            <input
+              className={styles.bookEditInput}
+              value={editLanguage}
+              onChange={(e) => setEditLanguage(e.target.value)}
+              placeholder="Language"
+              onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}
+            />
+          </div>
+          <input
+            className={styles.bookEditInput}
+            value={editGenre}
+            onChange={(e) => setEditGenre(e.target.value)}
+            placeholder="Genre"
+            onKeyDown={(e) => { if (e.key === 'Escape') cancelEdit(); }}
+          />
+          <div className={styles.bookEditActions}>
+            <button type="submit" className={styles.bookEditSave} disabled={saving || !editTitle.trim()}>
+              {saving ? '…' : 'Save'}
+            </button>
+            <button type="button" className={styles.bookEditCancel} onClick={cancelEdit}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <div className={styles.bookTitle}>
+            {seriesBookCount > 1 && book.seriesOrder != null && (
+              <span className={styles.orderBadge}>{book.seriesOrder}</span>
+            )}
+            {book.title}
+          </div>
+          <div className={styles.bookMeta}>
+            {[book.author, book.year, book.language, book.genre].filter(Boolean).join(' · ')}
+          </div>
+        </>
+      )}
       <div className={styles.bookStats}>
         <span>{book.chunkCount.toLocaleString()} chunks</span>
         <span>{(book.wordCount / 1000).toFixed(1)}k words</span>
@@ -613,6 +837,15 @@ function BookCard({
           >
             {hasAbstracts ? '↺ abstracts' : '⊕ abstracts'}
           </button>
+          {erroredJobType === 'abstract_generation' && (
+            <button
+              className={styles.actionBtnResume}
+              onClick={() => onResumeJob('abstract_generation')}
+              title="Continue abstract generation — skip already-processed sections"
+            >
+              ↻ continue abstracts
+            </button>
+          )}
           <button
             className={styles.actionBtn}
             onClick={() => {
@@ -623,6 +856,15 @@ function BookCard({
           >
             {hasEmbeddings ? '↺ embed' : '⊕ embed'}
           </button>
+          {erroredJobType === 'embedding_generation' && (
+            <button
+              className={styles.actionBtnResume}
+              onClick={() => onResumeJob('embedding_generation')}
+              title="Continue embedding — skip already-embedded chunks (blocked if embedding model changed)"
+            >
+              ↻ continue embed
+            </button>
+          )}
           {hasEmbeddings && (
             <button
               className={styles.actionBtn}
@@ -643,6 +885,14 @@ function BookCard({
       )}
 
       <button
+        className={styles.editBtn}
+        onClick={openEdit}
+        title="Edit book details"
+        disabled={editing}
+      >
+        ✎
+      </button>
+      <button
         className={styles.deleteBtn}
         onClick={onDelete}
         disabled={deleting}
@@ -651,5 +901,86 @@ function BookCard({
         {deleting ? '…' : '✕'}
       </button>
     </div>
+  );
+}
+
+type BookCardExtras = Omit<BookCardProps, 'book' | 'seriesBookCount' | 'dragHandleProps'>;
+
+function SortableBookCard(props: BookCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.book.id,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.55 : undefined,
+    zIndex: isDragging ? 2 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className={styles.sortableBookSlot}>
+      <BookCard
+        {...props}
+        dragHandleProps={{ ...attributes, ...listeners } as HTMLAttributes<HTMLButtonElement>}
+      />
+    </div>
+  );
+}
+
+function SeriesBookGrid({
+  seriesId,
+  books,
+  volCount,
+  onReorder,
+  getBookCardExtras,
+}: {
+  seriesId: string;
+  books: Book[];
+  volCount: number;
+  onReorder: (seriesId: string, bookIds: string[]) => void | Promise<void>;
+  getBookCardExtras: (book: Book) => BookCardExtras;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const ids = books.map((b) => b.id);
+  function onDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const order = books.map((b) => b.id);
+    const oldIndex = order.indexOf(String(active.id));
+    const newIndex = order.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    void onReorder(seriesId, arrayMove(order, oldIndex, newIndex));
+  }
+  if (volCount <= 1) {
+    return (
+      <div className={styles.bookGrid}>
+        {books.map((book) => (
+          <BookCard
+            key={book.id}
+            book={book}
+            seriesBookCount={volCount}
+            {...getBookCardExtras(book)}
+          />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <SortableContext items={ids} strategy={rectSortingStrategy}>
+        <div className={styles.bookGrid}>
+          {books.map((book) => (
+            <SortableBookCard
+              key={book.id}
+              book={book}
+              seriesBookCount={volCount}
+              {...getBookCardExtras(book)}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
   );
 }

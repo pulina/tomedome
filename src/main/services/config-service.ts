@@ -4,6 +4,8 @@ import {
   CONFIG_KEY,
   isLlmApiKeyRowKey,
   llmApiKeyStorageKey,
+  llmEmbeddingModelStorageKey,
+  llmModelStorageKey,
   llmTopKStorageKey,
   llmTopPStorageKey,
   llmTemperatureStorageKey,
@@ -105,11 +107,32 @@ export function getLlmConfig(): LlmConfig {
     }
   }
 
+  const modelsPerProvider: Partial<Record<LlmProvider, string>> = {};
+  for (const p of Object.values(LlmProvider)) {
+    const m = getConfigValue(llmModelStorageKey(p));
+    if (m) modelsPerProvider[p] = m;
+  }
+  // Backward compat: active provider model stored in legacy llm_model key
+  const activeModel = getConfigValue(CONFIG_KEY.llmModel) ?? '';
+  if (provider && activeModel && !modelsPerProvider[provider]) {
+    modelsPerProvider[provider] = activeModel;
+  }
+
+  const embeddingModelsPerProvider: Partial<Record<LlmProvider, string>> = {};
+  for (const p of Object.values(LlmProvider)) {
+    const m = getConfigValue(llmEmbeddingModelStorageKey(p));
+    if (m) embeddingModelsPerProvider[p] = m;
+  }
+  // Backward compat: active provider embedding model stored in legacy embedding_model key
+  if (provider && storedEmbeddingModel && !embeddingModelsPerProvider[provider]) {
+    embeddingModelsPerProvider[provider] = storedEmbeddingModel;
+  }
+
   return {
     provider,
     apiKey: '',
     keysSet,
-    model: getConfigValue(CONFIG_KEY.llmModel) ?? '',
+    model: activeModel,
     embeddingModel,
     embeddingQueryPrefix: getConfigValue(CONFIG_KEY.embeddingQueryPrefix) ?? '',
     embeddingPassagePrefix: getConfigValue(CONFIG_KEY.embeddingPassagePrefix) ?? '',
@@ -118,6 +141,8 @@ export function getLlmConfig(): LlmConfig {
     temperatures,
     topPs,
     topKs,
+    modelsPerProvider,
+    embeddingModelsPerProvider,
   };
 }
 
@@ -156,8 +181,10 @@ export interface LlmConfigInput {
 export function saveLlmConfig(input: LlmConfigInput): void {
   setConfigValue(CONFIG_KEY.llmProvider, input.provider);
   setConfigValue(CONFIG_KEY.llmModel, input.model);
+  setConfigValue(llmModelStorageKey(input.provider), input.model);
   if (input.embeddingModel !== undefined) {
     setConfigValue(CONFIG_KEY.embeddingModel, input.embeddingModel);
+    setConfigValue(llmEmbeddingModelStorageKey(input.provider), input.embeddingModel);
   }
   if (input.embeddingQueryPrefix !== undefined) {
     setConfigValue(CONFIG_KEY.embeddingQueryPrefix, input.embeddingQueryPrefix);

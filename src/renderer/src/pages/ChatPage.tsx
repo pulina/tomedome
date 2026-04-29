@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+
 import { Virtuoso } from 'react-virtuoso';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ChatContextAvailability, ChatMessage } from '@shared/types';
@@ -119,6 +120,9 @@ export function ChatPage() {
 
   const isThinking = streamVisibleHere && !streamingText;
 
+  const lastMsg = !streamVisibleHere && messages.length > 0 ? messages[messages.length - 1] : null;
+  const hasEmptyAssistant = lastMsg?.role === 'assistant' && !lastMsg.content.trim();
+
   // Server persists the assistant after tokens, then awaits title before `done`. listMessages
   // can return that row while the SSE is still open — same text also appears in the stream
   // footer; hide the duplicate list row until streaming ends.
@@ -186,6 +190,10 @@ export function ChatPage() {
     const content = input.trim();
     if (!content || streaming || !chatId) return;
     setInput('');
+    const currentChat = chats.find((c) => c.id === chatId);
+    if (currentChat && messages.length === 0 && currentChat.title === 'Unknown') {
+      upsert({ ...currentChat, title: content.slice(0, 60) });
+    }
     await send(content);
   }
 
@@ -202,6 +210,28 @@ export function ChatPage() {
       setCompacting(false);
     }
   }
+
+  const handleRetryConfirm = useCallback(
+    async (messageId: string, content: string) => {
+      if (!chatId || streaming) return;
+      const idx = messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) return;
+      await chatApi.deleteMessagesFrom(chatId, messageId);
+      setMessages((prev) => prev.slice(0, idx));
+      await send(content);
+    },
+    [chatId, messages, streaming, send],
+  );
+
+  const handleRetryLast = useCallback(async () => {
+    if (!chatId || streaming) return;
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    if (!lastUser) return;
+    const idx = messages.findIndex((m) => m.id === lastUser.id);
+    await chatApi.deleteMessagesFrom(chatId, lastUser.id);
+    setMessages((prev) => prev.slice(0, idx));
+    await send(lastUser.content);
+  }, [chatId, messages, streaming, send]);
 
   if (!chatId) {
     return (
@@ -226,7 +256,7 @@ export function ChatPage() {
             data={displayMessages}
             followOutput="auto"
             initialTopMostItemIndex={displayMessages.length > 0 ? displayMessages.length - 1 : 0}
-            itemContent={(_, m) =>
+            itemContent={(idx, m) =>
               m.role === 'compaction' ? (
                 <div className={styles.compactionMarker}>
                   <span className={styles.compactionMarkerIcon}>◈</span>
@@ -237,6 +267,9 @@ export function ChatPage() {
                   message={m}
                   toolEvents={messageToolEvents[m.id]}
                   onInspect={openInspector}
+                  onRetryConfirm={m.role === 'user' ? handleRetryConfirm : undefined}
+                  messagesAfterCount={displayMessages.slice(idx + 1).filter((msg) => msg.role !== 'compaction').length}
+                  disabled={streaming}
                 />
               )
             }
@@ -282,9 +315,16 @@ export function ChatPage() {
         )}
       </div>
 
-      {error && error !== 'aborted' && errorOriginChatId === chatId && (
-        <div className={styles.errorBar}>✗ {error}</div>
-      )}
+      {(error && error !== 'aborted' && errorOriginChatId === chatId) || hasEmptyAssistant ? (
+        <div className={styles.errorBar}>
+          <span>{error && error !== 'aborted' && errorOriginChatId === chatId ? `✗ ${error}` : '⊘ empty response'}</span>
+          {!streaming && (
+            <button type="button" className={styles.errorRetryBtn} onClick={handleRetryLast}>
+              ↺ retry
+            </button>
+          )}
+        </div>
+      ) : null}
 
       <div className={styles.composerWrap}>
         {contextAvail ? (

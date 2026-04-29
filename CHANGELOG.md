@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-29
+### Added
+- **Resume failed jobs**: abstract generation and embedding jobs can now continue from where they stopped instead of restarting from scratch — completed chapters/chunks are skipped. Available as "↻ resume" on failed jobs in the task panel and "↻ continue abstracts / embed" on book cards.
+- **Drag-to-reorder books in series**: books within a series can be reordered by drag-and-drop (dnd-kit); order is persisted to the DB, shown as a numbered badge on book cards, and reflected in the model's library context.
+- **Inline book metadata editing**: title, author, year, language, and genre can be edited directly on the book card without re-importing.
+- **Message retry/edit in chat**: every user message shows a "↺ retry" button that opens an inline editor; confirming re-sends the (optionally edited) message and erases all subsequent turns. Errors and empty responses also surface a "↺ retry" button in the error bar.
+- **Per-provider model memory**: last-used chat model and embedding model are remembered per provider; switching providers restores the previously selected model for that provider.
+
+### Changed
+- **In-band title generation**: the model now emits a `<title>` tag in its response instead of a separate post-turn LLM call, eliminating an extra round-trip per message.
+- **System prompt — language**: the model always replies in the user's language and formulates search queries in the book's language (shown next to each book in the library context).
+- **System prompt — transparency**: the model no longer mentions retrieval mechanics, tool names, or "passages provided" in responses; all book access is presented as direct knowledge.
+- **Library context**: series book listing now includes series-order position numbers and language.
+
+### Removed
+- `title-service.ts` — superseded by in-band `<title>` tag extraction.
+
 ## [0.1.9] - 2026-04-28
 ### Fixed
 - **"Use model default" not persisting** for temperature, top-p, and top-k: AJV was coercing `null → 0` when validating `anyOf: [number, null]` body schemas, causing the save to write `0` to the DB instead of deleting the key; parameters now correctly clear and are omitted from API requests.

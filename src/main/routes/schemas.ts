@@ -16,6 +16,14 @@ export const schemas = {
     required: ['id'],
     properties: { id: { type: 'string', minLength: 1 } },
   },
+  chatMessageFromParam: {
+    type: 'object',
+    required: ['id', 'messageId'],
+    properties: {
+      id: { type: 'string', minLength: 1 },
+      messageId: { type: 'string', minLength: 1 },
+    },
+  },
   chatTitleBody: {
     type: 'object',
     required: ['title'],
@@ -86,6 +94,8 @@ export const schemas = {
       type: { type: 'string', enum: ['abstract_generation', 'embedding_generation'] },
       /** When `type` is `embedding_generation`, run full abstract LLM regeneration after chunk embed (skips standalone abstract-vector pass in between). */
       chainAbstractGeneration: { type: 'boolean' },
+      /** Resume a previously failed job: skip already-processed items instead of clearing and restarting. */
+      resume: { type: 'boolean' },
     },
   },
   bookEmbeddingSearchBody: {
@@ -95,6 +105,17 @@ export const schemas = {
       query: { type: 'string', minLength: 1 },
       n: { type: 'integer', minimum: 1, maximum: 50 },
     },
+  },
+  bookUpdateBody: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', minLength: 1 },
+      author: { type: ['string', 'null'] },
+      year: { type: ['integer', 'null'] },
+      genre: { type: ['string', 'null'] },
+      language: { type: ['string', 'null'] },
+    },
+    additionalProperties: false,
   },
   bookEmbeddingOverrideBody: {
     type: 'object',
@@ -113,6 +134,14 @@ export const schemas = {
     type: 'object',
     required: ['title'],
     properties: { title: { type: 'string', minLength: 1, maxLength: 500 } },
+  },
+  seriesBookOrderBody: {
+    type: 'object',
+    required: ['bookIds'],
+    properties: {
+      bookIds: { type: 'array', items: { type: 'string', minLength: 1 } },
+    },
+    additionalProperties: false,
   },
   exportQuery: {
     type: 'object',

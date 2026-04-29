@@ -70,6 +70,8 @@ async function summarizeSectionToShortAbstract(params: {
   step: { current: number };
   totalSteps: number;
   savedCount: { value: number };
+  /** When resuming: skip the detailed LLM call and use this pre-existing content instead. */
+  existingDetailedText?: string;
 }): Promise<string | null> {
   const {
     jobId,
@@ -85,35 +87,42 @@ async function summarizeSectionToShortAbstract(params: {
     step,
     totalSteps,
     savedCount,
+    existingDetailedText,
   } = params;
 
   step.current++;
   updateProgress(jobId, step.current, totalSteps, `${sectionLabel} — detailed`);
   if (signal.aborted) return null;
 
-  const detailedResult = await generateStructured<{ abstract: string }>({
-    messages: [
-      {
-        role: 'user',
-        content: buildPrompt(abstractDetailedPrompt, sectionText, language, detailLevel),
-      },
-    ],
-    schemaName: 'abstract_detailed',
-    schema: ABSTRACT_SCHEMA,
-    maxTokens: abstractCfg.maxTokensDetailed,
-    purpose: 'abstract',
-    abortSignal: signal,
-  });
+  let detailedText: string;
 
-  if (signal.aborted) return null;
+  if (existingDetailedText) {
+    detailedText = existingDetailedText;
+  } else {
+    const detailedResult = await generateStructured<{ abstract: string }>({
+      messages: [
+        {
+          role: 'user',
+          content: buildPrompt(abstractDetailedPrompt, sectionText, language, detailLevel),
+        },
+      ],
+      schemaName: 'abstract_detailed',
+      schema: ABSTRACT_SCHEMA,
+      maxTokens: abstractCfg.maxTokensDetailed,
+      purpose: 'abstract',
+      abortSignal: signal,
+    });
 
-  const detailedText = detailedResult.abstract?.trim() ?? '';
-  if (detailedText.length < 20) {
-    throw new Error(`Model returned empty output for section "${sectionLabel}" (detailed abstract)`);
+    if (signal.aborted) return null;
+
+    detailedText = detailedResult.abstract?.trim() ?? '';
+    if (detailedText.length < 20) {
+      throw new Error(`Model returned empty output for section "${sectionLabel}" (detailed abstract)`);
+    }
+
+    saveAbstract(bookId, sectionNumber, sectionTitle, 'chapter_detailed', detailedText);
+    savedCount.value++;
   }
-
-  saveAbstract(bookId, sectionNumber, sectionTitle, 'chapter_detailed', detailedText);
-  savedCount.value++;
 
   step.current++;
   updateProgress(jobId, step.current, totalSteps, `${sectionLabel} — short`);
@@ -157,7 +166,7 @@ export async function runAbstractGeneration(
   jobId: string,
   bookId: string,
   signal: AbortSignal,
-  opts?: { skipFinalAbstractEmbedding?: boolean },
+  opts?: { skipFinalAbstractEmbedding?: boolean; resume?: boolean },
 ): Promise<void> {
   const chunks = getChunks(bookId);
   if (chunks.length === 0) return;
@@ -189,12 +198,30 @@ export async function runAbstractGeneration(
   const shortAbstracts: string[] = [];
   const savedCount = { value: 0 };
 
+  // When resuming, load existing abstracts once and build lookup maps to skip completed sections.
+  const existingByKey = new Map<string, string>(); // `${chapterNumber}:${level}` → content
+  if (opts?.resume) {
+    for (const a of getAbstracts(bookId)) {
+      existingByKey.set(`${a.chapterNumber}:${a.level}`, a.content);
+    }
+  }
+
   for (const [sectionNumber, sectionChunks] of sections) {
     if (signal.aborted) return;
 
     const sectionLabel =
       sectionChunks[0]?.chapter_title ?? `Section ${sectionNumber ?? '?'}`;
     const sectionTitle = sectionChunks[0]?.chapter_title ?? null;
+
+    // Resume: if chapter_short already exists, use it directly — no LLM calls needed.
+    const existingShort = existingByKey.get(`${sectionNumber}:chapter_short`);
+    if (existingShort) {
+      step.current += 2;
+      updateProgress(jobId, step.current, totalSteps, `${sectionLabel} — already done`);
+      shortAbstracts.push(existingShort);
+      continue;
+    }
+
     const sectionText = sectionChunks.map((c) => c.raw_text).join('\n\n');
     if (!sectionText.trim()) {
       getLogger().warn(
@@ -203,6 +230,9 @@ export async function runAbstractGeneration(
       );
       continue;
     }
+
+    // Resume: if chapter_detailed already exists, reuse it to skip the expensive detailed pass.
+    const existingDetailed = existingByKey.get(`${sectionNumber}:chapter_detailed`);
 
     const shortText = await summarizeSectionToShortAbstract({
       jobId,
@@ -218,42 +248,52 @@ export async function runAbstractGeneration(
       step,
       totalSteps,
       savedCount,
+      existingDetailedText: existingDetailed,
     });
     if (shortText === null) return;
     shortAbstracts.push(shortText);
   }
 
   if (shortAbstracts.length > 0) {
-    step.current++;
-    updateProgress(jobId, step.current, totalSteps, 'Full-work overview');
-    if (signal.aborted) return;
+    // Resume: if the book-level abstract already exists, skip generating it again.
+    const existingBookAbstract = existingByKey.get(`null:book`);
+    if (existingBookAbstract) {
+      step.current++;
+      updateProgress(jobId, step.current, totalSteps, 'Full-work overview — already done');
+    } else {
+      step.current++;
+      updateProgress(jobId, step.current, totalSteps, 'Full-work overview');
+      if (signal.aborted) return;
 
-    const bookResult = await generateStructured<{ abstract: string }>({
-      messages: [
-        {
-          role: 'user',
-          content: buildPrompt(abstractBookPrompt, shortAbstracts.join('\n\n'), language, detailLevel),
-        },
-      ],
-      schemaName: 'abstract_book',
-      schema: ABSTRACT_SCHEMA,
-      maxTokens: abstractCfg.maxTokensBook,
-      purpose: 'abstract',
-      abortSignal: signal,
-    });
+      const bookResult = await generateStructured<{ abstract: string }>({
+        messages: [
+          {
+            role: 'user',
+            content: buildPrompt(abstractBookPrompt, shortAbstracts.join('\n\n'), language, detailLevel),
+          },
+        ],
+        schemaName: 'abstract_book',
+        schema: ABSTRACT_SCHEMA,
+        maxTokens: abstractCfg.maxTokensBook,
+        purpose: 'abstract',
+        abortSignal: signal,
+      });
 
-    if (signal.aborted) return;
+      if (signal.aborted) return;
 
-    const bookText = bookResult.abstract?.trim() ?? '';
-    if (bookText.length < 20) {
-      throw new Error('Model returned empty output for full-work overview');
+      const bookText = bookResult.abstract?.trim() ?? '';
+      if (bookText.length < 20) {
+        throw new Error('Model returned empty output for full-work overview');
+      }
+
+      saveAbstract(bookId, null, null, 'book', bookText);
+      savedCount.value++;
     }
-
-    saveAbstract(bookId, null, null, 'book', bookText);
-    savedCount.value++;
   }
 
-  if (!signal.aborted && savedCount.value > 0) {
+  // In resume mode any collected shortAbstracts means all sections are accounted for.
+  const didWork = opts?.resume ? shortAbstracts.length > 0 : savedCount.value > 0;
+  if (!signal.aborted && didWork) {
     markBookAbstracted(bookId);
     if (!opts?.skipFinalAbstractEmbedding) await runAbstractEmbeddingGeneration(bookId, signal);
   }

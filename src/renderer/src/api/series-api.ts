@@ -22,4 +22,7 @@ export const seriesApi = {
 
   regenerateAbstract: (id: string): Promise<SeriesAbstractResponse> =>
     api.post<SeriesAbstractResponse>(`/api/series/${id}/abstract/regenerate`, {}),
+
+  setBookOrder: (seriesId: string, bookIds: string[]): Promise<void> =>
+    api.put<void>(`/api/series/${seriesId}/books/order`, { bookIds }),
 };

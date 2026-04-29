@@ -7,7 +7,7 @@ import {
   syncBookEmbeddingSnapshotAfterAbstractJob,
 } from './book-service';
 import { setJobStarted, updateProgress } from './job-queue';
-import { saveEmbeddings, saveAbstractEmbeddings } from './vector-store';
+import { saveEmbeddings, saveAbstractEmbeddings, getEmbeddedChunkIds } from './vector-store';
 import { getAdapter } from '../llm';
 import {
   getLlmConfig,
@@ -16,7 +16,7 @@ import {
   getEmbeddingPassagePrefix,
   getEmbeddingQueryPrefix,
 } from './config-service';
-import { normalizeEmbeddingPrefix, withEmbeddingPassagePrefix } from '@shared/embedding-profile';
+import { normalizeEmbeddingModelName, normalizeEmbeddingPrefix, withEmbeddingPassagePrefix } from '@shared/embedding-profile';
 
 const BATCH_SIZE = 20;
 
@@ -28,10 +28,10 @@ export function abstractEmbeddingProfileBlockedReason(bookId: string): string | 
   if (!bookHasChunkEmbeddings(bookId)) return null;
   const book = getBook(bookId);
   if (!book) return null;
-  const curM = (getEmbeddingModel() || '').trim();
+  const curM = normalizeEmbeddingModelName(getEmbeddingModel());
   const curP = normalizeEmbeddingPrefix(getEmbeddingPassagePrefix());
   if (!curM) return null;
-  const snapM = (book.embeddingModel ?? '').trim();
+  const snapM = normalizeEmbeddingModelName(book.embeddingModel);
   const snapP = normalizeEmbeddingPrefix(book.embeddingPassagePrefixSnapshot);
   if (snapM === curM && snapP === curP) return null;
   return (
@@ -45,6 +45,7 @@ export async function runEmbeddingGeneration(
   jobId: string,
   bookId: string,
   signal: AbortSignal,
+  opts?: { resume?: boolean },
 ): Promise<void> {
   const chunks = getChunks(bookId);
   if (chunks.length === 0) return;
@@ -64,13 +65,22 @@ export async function runEmbeddingGeneration(
 
   setJobStarted(jobId, embeddingModel);
 
-  const total = chunks.length;
-  let processed = 0;
+  // When resuming, skip chunks that already have embeddings from the same model.
+  const alreadyEmbedded = opts?.resume ? getEmbeddedChunkIds(bookId) : new Set<string>();
+  const chunksToProcess = opts?.resume ? chunks.filter((c) => !alreadyEmbedded.has(c.id)) : chunks;
 
-  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+  const total = chunks.length;
+  // Start progress counter at however many were already done.
+  let processed = alreadyEmbedded.size;
+
+  if (chunksToProcess.length === 0) {
+    updateProgress(jobId, total, total, `All ${total} chunks already embedded`);
+  }
+
+  for (let i = 0; i < chunksToProcess.length; i += BATCH_SIZE) {
     if (signal.aborted) return;
 
-    const batch = chunks.slice(i, i + BATCH_SIZE);
+    const batch = chunksToProcess.slice(i, i + BATCH_SIZE);
     const texts = batch.map((c) => withEmbeddingPassagePrefix(c.raw_text, passagePrefix));
 
     updateProgress(

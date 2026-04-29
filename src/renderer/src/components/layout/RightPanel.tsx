@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useJobs } from '../../hooks/useJobs';
 import { useInspector } from '../../hooks/useInspector';
+import { bookApi } from '../../api/book-api';
 import { chatApi } from '../../api/chat-api';
+import { ApiError } from '../../api/api-error';
 import type { Job, LlmCall } from '../../../../shared/types';
 import styles from './RightPanel.module.css';
 
@@ -11,6 +13,14 @@ export function RightPanel() {
   const { jobs, cancel, clearFinished } = useJobs();
   const { inspectedCallId, inspectGeneration, closeInspector } = useInspector();
   const [tab, setTab] = useState<Tab>('tasks');
+
+  async function handleResume(job: Job) {
+    try {
+      await bookApi.enqueueJob(job.bookId, job.type, { resume: true });
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : 'Failed to resume job');
+    }
+  }
 
   const activeJobs = jobs.filter((j) => j.status === 'running' || j.status === 'pending').length;
 
@@ -39,7 +49,7 @@ export function RightPanel() {
       </div>
       <div className={styles.body}>
         {tab === 'tasks' && (
-          <TaskList jobs={jobs} onCancel={cancel} onClearFinished={clearFinished} />
+          <TaskList jobs={jobs} onCancel={cancel} onClearFinished={clearFinished} onResume={handleResume} />
         )}
         {tab === 'details' && (
           <DetailsPanel callId={inspectedCallId} onClose={closeInspector} />
@@ -55,10 +65,12 @@ function TaskList({
   jobs,
   onCancel,
   onClearFinished,
+  onResume,
 }: {
   jobs: Job[];
   onCancel: (id: string) => void;
   onClearFinished: () => Promise<void>;
+  onResume: (job: Job) => void;
 }) {
   const finishedCount = jobs.filter(
     (j) => j.status === 'done' || j.status === 'cancelled' || j.status === 'error',
@@ -81,14 +93,14 @@ function TaskList({
       )}
       <div className={styles.taskList}>
         {jobs.map((job) => (
-          <JobCard key={job.id} job={job} onCancel={onCancel} />
+          <JobCard key={job.id} job={job} onCancel={onCancel} onResume={onResume} />
         ))}
       </div>
     </>
   );
 }
 
-function JobCard({ job, onCancel }: { job: Job; onCancel: (id: string) => void }) {
+function JobCard({ job, onCancel, onResume }: { job: Job; onCancel: (id: string) => void; onResume: (job: Job) => void }) {
   const pct =
     job.progressTotal > 0 ? Math.round((job.progressCurrent / job.progressTotal) * 100) : 0;
 
@@ -170,36 +182,51 @@ function JobCard({ job, onCancel }: { job: Job; onCancel: (id: string) => void }
       )}
 
       <div className={styles.jobStatus} style={{ color: statusColor[job.status] ?? 'inherit' }}>
-        ● {job.status}
-        {eta && job.status === 'running' && (
-          <span className={styles.jobEta}>{eta} left</span>
-        )}
-        {duration && (
-          <span className={styles.jobEta}>{duration}</span>
-        )}
-        {job.progressTotal > 0 && isFinished && (
-          <span className={styles.jobEta}>
-            {job.progressTotal} {STEP_LABELS[job.type] ?? 'steps'}
+        <div className={styles.jobStatusMain}>
+          <span className={styles.jobStatusLabel}>
+            ● {job.status}
           </span>
-        )}
-        {isActive && (
-          <button
-            className={styles.cancelBtn}
-            onClick={() => onCancel(job.id)}
-            title="Cancel"
-          >
-            ✕
-          </button>
-        )}
-        {isFinished && (
-          <button
-            className={styles.dismissBtn}
-            onClick={() => onCancel(job.id)}
-            title="Dismiss"
-          >
-            ✕
-          </button>
-        )}
+          {eta && job.status === 'running' && (
+            <span className={styles.jobEta}>{eta} left</span>
+          )}
+          {duration && (
+            <span className={styles.jobEta}>{duration}</span>
+          )}
+          {job.progressTotal > 0 && isFinished && (
+            <span className={styles.jobEta}>
+              {job.progressTotal} {STEP_LABELS[job.type] ?? 'steps'}
+            </span>
+          )}
+        </div>
+        <div className={styles.jobStatusActions}>
+          {isActive && (
+            <button
+              className={styles.cancelBtn}
+              onClick={() => onCancel(job.id)}
+              title="Cancel"
+            >
+              ✕
+            </button>
+          )}
+          {job.status === 'error' && (
+            <button
+              className={styles.resumeBtn}
+              onClick={() => void onResume(job)}
+              title="Resume — skip already-processed items and continue from where it failed"
+            >
+              ↻ resume
+            </button>
+          )}
+          {isFinished && (
+            <button
+              className={styles.dismissBtn}
+              onClick={() => onCancel(job.id)}
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {job.progressTotal > 0 && job.status !== 'cancelled' && job.status !== 'error' && (

@@ -2,6 +2,20 @@ export function normalizeEmbeddingPrefix(s: string | null | undefined): string {
   return (s ?? '').trim();
 }
 
+/**
+ * Normalize an embedding model name for comparison across providers.
+ * Strips an optional `provider/` prefix (OpenRouter convention) and replaces
+ * `:` with `-` (Ollama uses `name:tag` while other registries use `name-tag`).
+ * Example equivalences: "openai/text-embedding-3-small" == "text-embedding-3-small",
+ *   "qwen/qwen3-embedding-8b" == "qwen3-embedding:8b".
+ */
+export function normalizeEmbeddingModelName(model: string | null | undefined): string {
+  let s = (model ?? '').trim();
+  const slash = s.indexOf('/');
+  if (slash !== -1) s = s.slice(slash + 1);
+  return s.replace(/:/g, '-');
+}
+
 export function withEmbeddingQueryPrefix(text: string, prefix: string): string {
   return `${prefix}${text}`;
 }
@@ -28,10 +42,10 @@ export function embeddingOverrideActive(
   currentPassagePrefix: string,
 ): boolean {
   if (!book.embeddingModelOverride) return false;
-  const lockM = (book.embeddingOverrideLockModel ?? '').trim();
+  const lockM = normalizeEmbeddingModelName(book.embeddingOverrideLockModel);
   if (!lockM) return false;
   const lockP = normalizeEmbeddingPrefix(book.embeddingOverrideLockPassagePrefix);
-  const curM = (currentModel ?? '').trim();
+  const curM = normalizeEmbeddingModelName(currentModel);
   const curP = normalizeEmbeddingPrefix(currentPassagePrefix);
   return lockM === curM && lockP === curP;
 }
@@ -43,9 +57,9 @@ export function bookStoredEmbeddingProfileDiffers(
   currentPassagePrefix: string,
 ): boolean {
   if (book.chunkCount === 0 || !book.embeddedAt) return false;
-  const cur = (currentModel ?? '').trim();
+  const cur = normalizeEmbeddingModelName(currentModel);
   if (!cur) return false;
-  const storedModel = (book.embeddingModel ?? '').trim();
+  const storedModel = normalizeEmbeddingModelName(book.embeddingModel);
   if (!storedModel) return true;
   if (storedModel !== cur) return true;
   if (normalizeEmbeddingPrefix(book.embeddingPassagePrefixSnapshot) !== normalizeEmbeddingPrefix(currentPassagePrefix)) {

@@ -273,16 +273,74 @@
   transition: border-color 120ms;
 }
 
+.bookCardWithDragHandle {
+  padding-left: 22px;
+}
+
+.dragHandle {
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  width: 16px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: -0.12em;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  cursor: grab;
+  z-index: 1;
+  user-select: none;
+}
+
+.dragHandle:hover {
+  color: var(--color-text-primary);
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.sortableBookSlot {
+  min-width: 0;
+}
+
 .bookCard:hover {
   border-color: var(--border-color-strong);
 }
 
 .bookTitle {
+  display: flex;
+  align-items: center;
   font-size: 13px;
   font-weight: 500;
   color: var(--color-text-primary);
   margin-bottom: 4px;
   padding-right: 20px;
+}
+
+.orderBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-accent);
+  background: var(--color-accent-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 2px;
+  flex-shrink: 0;
 }
 
 .bookMeta {
@@ -348,6 +406,25 @@
   cursor: not-allowed;
 }
 
+.actionBtnResume {
+  padding: 3px 8px;
+  font-size: 9px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-accent);
+  cursor: pointer;
+  transition: color 120ms, background 120ms;
+}
+
+.actionBtnResume:hover {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
 .deleteBtn {
   position: absolute;
   top: 10px;
@@ -373,6 +450,116 @@
 
 .deleteBtn:hover {
   color: var(--color-error);
+}
+
+.editBtn {
+  position: absolute;
+  top: 10px;
+  right: 30px;
+  width: 18px;
+  height: 18px;
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  opacity: 0;
+  transition: opacity 120ms, color 120ms;
+}
+
+.bookCard:hover .editBtn {
+  opacity: 1;
+}
+
+.editBtn:hover {
+  color: var(--color-text-primary);
+}
+
+.bookEditForm {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.bookEditInput {
+  width: 100%;
+  background: var(--color-bg);
+  border: 1px solid var(--border-color-strong);
+  border-radius: 2px;
+  padding: 3px 6px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.bookEditInput:focus {
+  border-color: var(--color-accent);
+}
+
+.bookEditInput::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+.bookEditRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.bookEditActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.bookEditSave {
+  padding: 2px 8px;
+  font-size: 9px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--color-accent);
+  border: 1px solid var(--border-color-strong);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.bookEditSave:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.bookEditSave:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bookEditCancel {
+  padding: 2px 8px;
+  font-size: 9px;
+  font-family: var(--font-heading);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 120ms, border-color 120ms;
+}
+
+.bookEditCancel:hover {
+  color: var(--color-text-primary);
+  border-color: var(--border-color-strong);
 }
 
 /* ── Import result banner ── */

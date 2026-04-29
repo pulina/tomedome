@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ChatContextAvailability, ChatMessage } from '@shared/types';
 import logoUrl from '../assets/logo_small.svg';
 import styles from './ChatPage.module.css';
@@ -6,12 +7,51 @@ export function MessageBubble({
   message,
   toolEvents,
   onInspect,
+  onRetryConfirm,
+  messagesAfterCount = 0,
+  disabled = false,
 }: {
   message: ChatMessage;
   toolEvents?: string[];
   onInspect: (id: string) => void;
+  onRetryConfirm?: (messageId: string, content: string) => void;
+  messagesAfterCount?: number;
+  disabled?: boolean;
 }) {
   const isUser = message.role === 'user';
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (editing) textareaRef.current?.focus();
+  }, [editing]);
+
+  function startEdit() {
+    setDraft(message.content);
+    setEditing(true);
+  }
+
+  function handleCancel() {
+    setEditing(false);
+  }
+
+  function handleConfirm() {
+    const content = draft.trim();
+    if (!content) return;
+    onRetryConfirm?.(message.id, content);
+    setEditing(false);
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleConfirm();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  }
+
   return (
     <div className={`${styles.msg} ${isUser ? styles.msgUser : ''}`}>
       <div className={`${styles.avatar} ${isUser ? styles.avatarUser : styles.avatarAi}`}>
@@ -28,17 +68,55 @@ export function MessageBubble({
             ))}
           </div>
         )}
-        <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAi}`}>
-          {message.content}
-        </div>
-        {!isUser && message.llmCallId && (
-          <button
-            type="button"
-            className={styles.inspector}
-            onClick={() => onInspect(message.llmCallId!)}
-          >
-            ◈ inspect call
-          </button>
+        {isUser && editing ? (
+          <div className={styles.retryEditorWrap}>
+            {messagesAfterCount > 0 && (
+              <div className={styles.retryWarn}>
+                ⚠ {messagesAfterCount} {messagesAfterCount === 1 ? 'message' : 'messages'} after this will be erased
+              </div>
+            )}
+            <textarea
+              ref={textareaRef}
+              className={styles.retryEditor}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={3}
+            />
+            <div className={styles.retryActions}>
+              <button type="button" className={styles.retryCancelBtn} onClick={handleCancel}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.retryConfirmBtn}
+                onClick={handleConfirm}
+                disabled={!draft.trim()}
+              >
+                ↺ Retry
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAi}`}>
+              {message.content}
+            </div>
+            {isUser && onRetryConfirm && !disabled && (
+              <button type="button" className={styles.retryBtn} onClick={startEdit}>
+                ↺ retry
+              </button>
+            )}
+            {!isUser && message.llmCallId && (
+              <button
+                type="button"
+                className={styles.inspector}
+                onClick={() => onInspect(message.llmCallId!)}
+              >
+                ◈ inspect call
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

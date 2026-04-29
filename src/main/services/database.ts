@@ -201,6 +201,7 @@ export function getDb(): Database.Database {
   try { db.exec(`ALTER TABLE books ADD COLUMN embedding_passage_prefix_snapshot TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE books ADD COLUMN embedding_override_lock_model TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE books ADD COLUMN embedding_override_lock_passage_prefix TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE books ADD COLUMN series_order INTEGER`); } catch { /* already exists */ }
   // Backfill FTS index for any chunks inserted before the virtual table existed.
   try { db.exec(`INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')`); } catch { /* non-critical */ }
 
@@ -237,9 +238,9 @@ export function getDb(): Database.Database {
   `);
 
   // Schema version — bump when structural migrations are added
-  db.prepare('INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)').run(CONFIG_KEY.schemaVersion, '3');
-  db.prepare('UPDATE config SET value=? WHERE key=? AND CAST(value AS INTEGER) < 3').run(
-    '3',
+  db.prepare('INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)').run(CONFIG_KEY.schemaVersion, '4');
+  db.prepare('UPDATE config SET value=? WHERE key=? AND CAST(value AS INTEGER) < 4').run(
+    '4',
     CONFIG_KEY.schemaVersion,
   );
 

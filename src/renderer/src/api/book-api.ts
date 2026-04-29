@@ -43,11 +43,12 @@ export const bookApi = {
   enqueueJob: (
     id: string,
     type: 'abstract_generation' | 'embedding_generation',
-    opts?: { chainAbstractGeneration?: boolean },
+    opts?: { chainAbstractGeneration?: boolean; resume?: boolean },
   ): Promise<{ job: Job }> =>
     api.post<{ job: Job }>(`/api/books/${id}/jobs`, {
       type,
       ...(opts?.chainAbstractGeneration ? { chainAbstractGeneration: true } : {}),
+      ...(opts?.resume ? { resume: true } : {}),
     }),
 
   searchEmbeddings: (
@@ -59,6 +60,17 @@ export const bookApi = {
       query,
       n,
     }),
+
+  update: (
+    id: string,
+    patch: {
+      title?: string;
+      author?: string | null;
+      year?: number | null;
+      genre?: string | null;
+      language?: string | null;
+    },
+  ): Promise<Book> => api.patch<Book>(`/api/books/${id}`, patch),
 
   setEmbeddingOverride: (id: string, override: boolean): Promise<void> =>
     api.patch<void>(`/api/books/${id}/embedding-override`, { override }),

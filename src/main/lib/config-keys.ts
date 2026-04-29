@@ -28,6 +28,8 @@ const RERANKER_MODEL_PREFIX = 'reranker_model_';
 const LLM_TEMPERATURE_PREFIX = 'llm_temperature_';
 const LLM_TOP_P_PREFIX = 'llm_top_p_';
 const LLM_TOP_K_PREFIX = 'llm_top_k_';
+const LLM_MODEL_PREFIX = 'llm_model_';
+const LLM_EMBEDDING_MODEL_PREFIX = 'llm_embedding_model_';
 
 export function llmApiKeyStorageKey(provider: LlmProvider): string {
   return `${LLM_API_KEY_PREFIX}${provider}`;
@@ -47,6 +49,14 @@ export function llmTopPStorageKey(provider: LlmProvider): string {
 
 export function llmTopKStorageKey(provider: LlmProvider): string {
   return `${LLM_TOP_K_PREFIX}${provider}`;
+}
+
+export function llmModelStorageKey(provider: LlmProvider): string {
+  return `${LLM_MODEL_PREFIX}${provider}`;
+}
+
+export function llmEmbeddingModelStorageKey(provider: LlmProvider): string {
+  return `${LLM_EMBEDDING_MODEL_PREFIX}${provider}`;
 }
 
 export function isLlmApiKeyRowKey(key: string): boolean {

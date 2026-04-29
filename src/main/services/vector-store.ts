@@ -41,6 +41,30 @@ export function deleteBookEmbeddings(bookId: string): void {
     .run(bookId);
 }
 
+export function getEmbeddedChunkIds(bookId: string): Set<string> {
+  const rows = getDb()
+    .prepare(
+      `SELECT ce.chunk_id FROM chunk_embeddings ce
+       JOIN chunks c ON c.id = ce.chunk_id
+       WHERE c.book_id = ?`,
+    )
+    .all(bookId) as { chunk_id: string }[];
+  return new Set(rows.map((r) => r.chunk_id));
+}
+
+/** Returns the embedding model used for existing chunk vectors, or null if none exist. */
+export function getExistingChunkEmbeddingModel(bookId: string): string | null {
+  const row = getDb()
+    .prepare(
+      `SELECT ce.model FROM chunk_embeddings ce
+       JOIN chunks c ON c.id = ce.chunk_id
+       WHERE c.book_id = ?
+       LIMIT 1`,
+    )
+    .get(bookId) as { model: string } | undefined;
+  return row?.model ?? null;
+}
+
 export interface SearchResult {
   chunkId: string;
   score: number;
@@ -187,6 +211,25 @@ export function searchBookEmbeddings(
  * similarity and can be unioned/reranked with dense retrieval.
  * Returns [] on FTS query parse errors (e.g. special characters in query).
  */
+/**
+ * Expand a plain FTS5 query so bare words get prefix-match (*) appended.
+ * Leaves alone: quoted phrases, tokens already ending in *, FTS5 operators (AND/OR/NOT).
+ * "Thane" → "Thane*", "AND" stays "AND", "exact phrase" stays untouched.
+ */
+function expandFtsQuery(query: string): string {
+  // If the query contains a quoted phrase, leave it untouched to avoid breaking phrase syntax.
+  if (query.includes('"')) return query;
+  return query
+    .split(/\s+/)
+    .map((token) => {
+      const upper = token.toUpperCase();
+      if (upper === 'AND' || upper === 'OR' || upper === 'NOT') return token;
+      if (token.endsWith('*')) return token;
+      return token + '*';
+    })
+    .join(' ');
+}
+
 export function searchChunksFts(
   query: string,
   topN: number,
@@ -194,11 +237,12 @@ export function searchChunksFts(
   bookId?: string | null,
 ): RagResult[] {
   try {
+    const ftsQuery = expandFtsQuery(query);
     const seriesClause = seriesId ? ' AND b.series_id = ?' : '';
     const bookClause = bookId ? ' AND c.book_id = ?' : '';
     // Arg order must match `?` positions in the SQL below:
     // 1: chunks_fts MATCH, 2 (cond): series_id, 3 (cond): book_id, last: LIMIT
-    const sqlArgs: unknown[] = [query];
+    const sqlArgs: unknown[] = [ftsQuery];
     if (seriesId) sqlArgs.push(seriesId);
     if (bookId) sqlArgs.push(bookId);
     sqlArgs.push(topN);

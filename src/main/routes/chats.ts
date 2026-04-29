@@ -3,6 +3,7 @@ import {
   addMessage,
   createChat,
   deleteChat,
+  deleteMessagesFrom,
   getChat,
   getMessageToolEventLabels,
   getMessages,
@@ -59,6 +60,18 @@ export async function registerChatRoutes(fastify: FastifyInstance): Promise<void
         messages,
         toolEventLabels: getMessageToolEventLabels(id, messages),
       };
+    },
+  );
+
+  fastify.delete<{ Params: { id: string; messageId: string } }>(
+    '/api/chats/:id/messages/from/:messageId',
+    { schema: { params: schemas.chatMessageFromParam } },
+    async (req, reply) => {
+      const { id: chatId, messageId } = req.params;
+      const chat = getChat(chatId);
+      if (!chat) return reply.code(404).send(apiErr('not_found', 'chat not found'));
+      deleteMessagesFrom(chatId, messageId);
+      return reply.code(204).send();
     },
   );
 

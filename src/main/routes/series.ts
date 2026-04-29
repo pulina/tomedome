@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { apiErr } from '../lib/api-errors';
+import { reorderBooksInSeries } from '../services/book-service';
 import { createSeries, deleteSeries, getSeries, listSeries, renameSeries } from '../services/series-service';
 import { runSeriesAbstractGeneration } from '../services/abstract-service';
 import { schemas } from './schemas';
@@ -32,6 +33,22 @@ export async function registerSeriesRoutes(fastify: FastifyInstance): Promise<vo
     { schema: { params: schemas.idParam } },
     async (req, reply) => {
       deleteSeries(req.params.id);
+      return reply.code(204).send();
+    },
+  );
+
+  fastify.put<{ Params: { id: string }; Body: { bookIds: string[] } }>(
+    '/api/series/:id/books/order',
+    { schema: { params: schemas.idParam, body: schemas.seriesBookOrderBody } },
+    async (req, reply) => {
+      if (!getSeries(req.params.id)) return reply.code(404).send(apiErr('not_found', 'Series not found'));
+      try {
+        reorderBooksInSeries(req.params.id, req.body.bookIds);
+      } catch (e) {
+        return reply
+          .code(400)
+          .send(apiErr('validation', e instanceof Error ? e.message : 'Invalid book order'));
+      }
       return reply.code(204).send();
     },
   );

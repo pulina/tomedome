@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { chunkText, detectLanguage, getPreviewStats, parseFile, titleFromFilename } from '../services/ingest-service';
-import { clearAbstracts, createBook, deleteBook, getAbstracts, getBook, listBooks, saveChunks, setBookEmbeddingOverride } from '../services/book-service';
+import { clearAbstracts, createBook, deleteBook, getAbstracts, getBook, listBooks, saveChunks, setBookEmbeddingOverride, updateBook } from '../services/book-service';
 import { createBookBackgroundJobIfIdle, enqueue } from '../services/job-queue';
 import { runAbstractGeneration, runSeriesAbstractGeneration } from '../services/abstract-service';
 import {
@@ -8,7 +8,7 @@ import {
   runAbstractEmbeddingGeneration,
   runEmbeddingGeneration,
 } from '../services/embedding-service';
-import { deleteBookAbstractEmbeddings, deleteBookEmbeddings, searchBookAbstractEmbeddings, searchBookEmbeddings } from '../services/vector-store';
+import { deleteBookAbstractEmbeddings, deleteBookEmbeddings, getExistingChunkEmbeddingModel, searchBookAbstractEmbeddings, searchBookEmbeddings } from '../services/vector-store';
 import { getAdapter } from '../llm';
 import {
   getApiKeyPlaintext,
@@ -16,7 +16,7 @@ import {
   getEmbeddingQueryPrefix,
   getLlmConfig,
 } from '../services/config-service';
-import { withEmbeddingQueryPrefix } from '@shared/embedding-profile';
+import { normalizeEmbeddingModelName, withEmbeddingQueryPrefix } from '@shared/embedding-profile';
 import type { ChunkingOptions } from '../../shared/types';
 import { apiErr } from '../lib/api-errors';
 import { schemas } from './schemas';
@@ -29,6 +29,7 @@ const BOOK_JOB_CONFLICT_BODY = apiErr(
 interface BookEnqueueJobBody {
   type: 'abstract_generation' | 'embedding_generation';
   chainAbstractGeneration?: boolean;
+  resume?: boolean;
 }
 
 interface PreviewBody {
@@ -188,16 +189,17 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
       const { type } = body;
       const chainAbstractGeneration =
         type === 'embedding_generation' && body.chainAbstractGeneration === true;
+      const resume = body.resume === true;
 
       if (type === 'abstract_generation') {
         const blocked = abstractEmbeddingProfileBlockedReason(book.id);
         if (blocked) return reply.code(422).send(apiErr('unprocessable', blocked));
         const job = createBookBackgroundJobIfIdle('abstract_generation', book.id);
         if (!job) return reply.code(409).send(BOOK_JOB_CONFLICT_BODY);
-        clearAbstracts(book.id);
+        if (!resume) clearAbstracts(book.id);
         const seriesId = book.seriesId;
         enqueue(job.id, async (jobId, signal) => {
-          await runAbstractGeneration(jobId, book.id, signal);
+          await runAbstractGeneration(jobId, book.id, signal, { resume });
           if (!signal.aborted && seriesId) {
             void runSeriesAbstractGeneration(seriesId, new AbortController().signal);
           }
@@ -206,15 +208,31 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
       }
 
       if (type === 'embedding_generation') {
+        if (resume) {
+          // Block resume when existing chunk embeddings were built with a different model —
+          // mixing vectors from two different models in one book would break RAG scoring.
+          const existingModel = getExistingChunkEmbeddingModel(book.id);
+          const currentModel = getEmbeddingModel();
+          if (existingModel && currentModel && normalizeEmbeddingModelName(existingModel) !== normalizeEmbeddingModelName(currentModel)) {
+            return reply.code(422).send(
+              apiErr(
+                'unprocessable',
+                `Cannot resume: existing embeddings used model "${existingModel}" but current model is "${currentModel}". Use ↺ embed to re-embed all chunks from scratch.`,
+              ),
+            );
+          }
+        }
         const job = createBookBackgroundJobIfIdle('embedding_generation', book.id, {
           chainAbstractGeneration: chainAbstractGeneration,
         });
         if (!job) return reply.code(409).send(BOOK_JOB_CONFLICT_BODY);
-        deleteBookEmbeddings(book.id);
-        deleteBookAbstractEmbeddings(book.id);
+        if (!resume) {
+          deleteBookEmbeddings(book.id);
+          deleteBookAbstractEmbeddings(book.id);
+        }
         const seriesId = book.seriesId;
         enqueue(job.id, async (jobId, signal) => {
-          await runEmbeddingGeneration(jobId, book.id, signal);
+          await runEmbeddingGeneration(jobId, book.id, signal, { resume });
           if (signal.aborted) return;
           if (chainAbstractGeneration) {
             clearAbstracts(book.id);
@@ -232,6 +250,26 @@ export async function registerBookRoutes(fastify: FastifyInstance): Promise<void
       return reply
         .code(400)
         .send(apiErr('validation', 'type must be abstract_generation or embedding_generation'));
+    },
+  );
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: {
+      title?: string;
+      author?: string | null;
+      year?: number | null;
+      genre?: string | null;
+      language?: string | null;
+    };
+  }>(
+    '/api/books/:id',
+    { schema: { params: schemas.idParam, body: schemas.bookUpdateBody } },
+    async (req, reply) => {
+      const book = getBook(req.params.id);
+      if (!book) return reply.code(404).send(apiErr('not_found', 'Book not found'));
+      const updated = updateBook(req.params.id, req.body ?? {});
+      return reply.send(updated);
     },
   );
 

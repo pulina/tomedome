@@ -23,6 +23,8 @@ export const chatApi = {
     api.get<ChatMessagesResponse>(`/api/chats/${encodeURIComponent(id)}/messages`),
   getLlmCall: (id: string) => api.get<LlmCall>(`/api/logs/llm/${encodeURIComponent(id)}`),
   compact: (id: string) => api.post<{ compactionMessage: ChatMessage }>(`/api/chats/${encodeURIComponent(id)}/compact`),
+  deleteMessagesFrom: (chatId: string, messageId: string) =>
+    api.del(`/api/chats/${encodeURIComponent(chatId)}/messages/from/${encodeURIComponent(messageId)}`),
 };
 
 export const logsApi = {

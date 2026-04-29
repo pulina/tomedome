@@ -3,13 +3,13 @@ import {
   addMessage,
   getChat,
   getMessages,
+  setChatTitle,
 } from './chat-service';
 import { listBooks, getAbstracts, getBook, getChunkWindow, listChapters, annotateChapterSplits } from './book-service';
 import { searchChunksFts } from './vector-store';
 import { listSeries } from './series-service';
-import { ChatTurn, streamChat, resolveToolCalls } from './llm-client';
+import { ChatTurn, resolveToolCalls } from './llm-client';
 import type { AgentMessage, ToolDefinition } from './llm-client';
-import { evaluateTitle } from './title-service';
 import {
   buildRagContext,
   isSemanticRetrievalOperational,
@@ -118,17 +118,20 @@ const BOOK_TOOLS: ToolDefinition[] = [
   {
     name: 'search_text',
     description:
-      'Keyword search over all ingested text. Use when you know a specific word, name, or phrase that must appear verbatim — character names, place names, quoted fragments, unique terminology. Supports FTS5 syntax (AND, OR, NOT, "phrase", prefix*).',
+      'Keyword search over all ingested text. Use when you know a specific word, name, or phrase that must appear verbatim — character names, place names, quoted fragments, unique terminology. Supports FTS5 syntax (AND, OR, NOT, "phrase", prefix*).' +
+      ' IMPORTANT — query strategy: FTS5 matches ALL terms within the same chunk, so multi-word queries almost always return nothing. Always search for a single distinctive keyword first.' +
+      ' Use the prefix wildcard for partial matches: "Thane*" matches "Thanedd", "Dijkst*" matches "Dijkstra". If a query returns nothing: (1) retry with a prefix variant using *; (2) try an inflected form of the word; (3) fall back to search_semantic.' +
+      ' IMPORTANT — scope: omitting book_id searches the entire library. When a question is about a series, always try without book_id first — the relevant passage may be in a different volume than you assumed. Only restrict to a specific book_id when the user explicitly asks about that book.',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Word or phrase that must appear verbatim. Supports FTS5 operators.',
+          description: 'A single keyword or short exact phrase. Prefix matching is applied automatically — "Thane" will find "Thanedd". Avoid multi-word queries — they rarely match.',
         },
         book_id: {
           type: 'string',
-          description: 'Optional. Limit search to a specific book.',
+          description: 'Optional. Omit to search all books in scope. Only set when the user explicitly targets a specific book.',
         },
       },
       required: ['query'],
@@ -148,7 +151,7 @@ const BOOK_TOOLS: ToolDefinition[] = [
         },
         book_id: {
           type: 'string',
-          description: 'Optional. Limit search to a specific book.',
+          description: 'Optional. Omit to search the entire library. Only set when the user explicitly targets a specific book.',
         },
       },
       required: ['query'],
@@ -236,8 +239,9 @@ async function executeTool(
       const rawBookId = args['book_id'] as string | undefined;
       const bookId = rawBookId?.trim() ? rawBookId.trim() : null;
       if (!query) return 'Query must not be empty.';
+      if (bookId && !getBook(bookId)) return `Book id "${bookId}" does not exist in the library. Use only book ids listed in the Library section of your context.`;
 
-      const hits = searchChunksFts(query, 8, null, bookId);
+      const hits = searchChunksFts(query, 8, seriesId, bookId);
       if (hits.length === 0) return 'No passages found matching that query.';
       return formatRagHits(hits, `Search results for "${query}"`);
     }
@@ -246,6 +250,7 @@ async function executeTool(
       const query = (args['query'] as string).trim();
       const rawBookId = args['book_id'] as string | undefined;
       const bookId = rawBookId?.trim() ? rawBookId.trim() : null;
+      if (bookId && !getBook(bookId)) return `Book id "${bookId}" does not exist in the library. Use only book ids listed in the Library section of your context.`;
       if (!query) return 'Query must not be empty.';
 
       let hits: Awaited<ReturnType<typeof searchSemanticForTool>>;
@@ -270,61 +275,94 @@ async function executeTool(
   }
 }
 
-function buildSystemPrompt(seriesId: string | null, semanticOk: boolean): string {
+/**
+ * Strips the leading <title>...</title> tag from a model response.
+ * Returns the extracted title (or null if absent/Unknown) and the cleaned content.
+ */
+function extractTitleTag(text: string): { title: string | null; content: string } {
+  const match = text.match(/^\s*<title>([\s\S]*?)<\/title>\s*/);
+  if (!match) return { title: null, content: text };
+  const raw = match[1]?.trim() ?? '';
+  const title = !raw || raw === 'Unknown' ? null : raw.slice(0, 80);
+  return { title, content: text.slice(match[0].length) };
+}
+
+function buildSystemPrompt(seriesId: string | null, semanticOk: boolean, currentTitle: string | null): string {
   const allSeries = listSeries();
   const allBooks = listBooks();
 
   const visibleSeries = seriesId ? allSeries.filter((s) => s.id === seriesId) : allSeries;
   const visibleBooks = seriesId ? allBooks.filter((b) => b.seriesId === seriesId) : allBooks;
 
+  let base: string;
+
   if (visibleBooks.length === 0) {
-    return (
+    base =
       chatSystemBase +
-      '\n\n## Library\n\nThe library is currently empty. Inform the user and suggest adding books via the Library tab.'
-    );
-  }
+      '\n\n## Library\n\nThe library is currently empty. Inform the user and suggest adding books via the Library tab.';
+  } else {
+    const sections: string[] = [chatSystemBase, '## Library'];
 
-  const sections: string[] = [chatSystemBase, '## Library'];
+    for (const series of visibleSeries) {
+      const books = visibleBooks.filter((b) => b.seriesId === series.id);
+      books.sort((a, b) => (a.seriesOrder ?? 999999) - (b.seriesOrder ?? 999999));
+      if (books.length === 0) continue;
 
-  for (const series of visibleSeries) {
-    const books = visibleBooks.filter((b) => b.seriesId === series.id);
-    if (books.length === 0) continue;
+      sections.push(`\n### ${series.title} (series id: \`${series.id}\`)`);
 
-    sections.push(`\n### ${series.title} (series id: \`${series.id}\`)`);
+      if (series.abstract) {
+        sections.push(series.abstract);
+      }
 
-    if (series.abstract) {
-      sections.push(series.abstract);
+      const bookLines = books.map((b, idx) => {
+        const pos =
+          books.length > 1 ? `${b.seriesOrder ?? idx + 1}. ` : '';
+        const meta = [b.author, b.year ? String(b.year) : null, b.language ? `language: ${b.language}` : null]
+          .filter(Boolean)
+          .join(', ');
+        const hasAbstract = !!b.abstractedAt;
+        return `- ${pos}${b.title} (id: \`${b.id}\`)${meta ? ` — ${meta}` : ''}${hasAbstract ? ' — abstract available' : ' — no abstract yet'}`;
+      });
+      sections.push(bookLines.join('\n'));
     }
 
-    const bookLines = books.map((b) => {
-      const meta = [b.author, b.year ? String(b.year) : null].filter(Boolean).join(', ');
-      const hasAbstract = !!b.abstractedAt;
-      return `- ${b.title} (id: \`${b.id}\`)${meta ? ` — ${meta}` : ''}${hasAbstract ? ' — abstract available' : ' — no abstract yet'}`;
-    });
-    sections.push(bookLines.join('\n'));
-  }
-
-  if (!semanticOk) {
-    sections.push(
-      '\n## Semantic chunk retrieval unavailable\n\n' +
-        'The `search_semantic` tool and automatic semantic RAG on the user message are off: there is no embedding-capable provider/model and/or no chunk embeddings match the current embedding profile for books in this chat scope. ' +
-        'Use `search_text` (FTS) for exact words and phrases, and `read_book_abstract`, `read_chapter_abstract`, `read_chapter_detailed`, and `list_chapters` for summaries and structure.',
-    );
-  }
-
-  if (!seriesId) {
-    const orphans = visibleBooks.filter((b) => !b.seriesId || !allSeries.find((s) => s.id === b.seriesId));
-    if (orphans.length > 0) {
-      sections.push('\n### Unsorted Books');
+    if (!semanticOk) {
       sections.push(
-        orphans
-          .map((b) => `- ${b.title} (id: \`${b.id}\`)${b.abstractedAt ? ' — abstract available' : ''}`)
-          .join('\n'),
+        '\n## Semantic chunk retrieval unavailable\n\n' +
+          'The `search_semantic` tool and automatic semantic RAG on the user message are off: there is no embedding-capable provider/model and/or no chunk embeddings match the current embedding profile for books in this chat scope. ' +
+          'Use `search_text` (FTS) for exact words and phrases, and `read_book_abstract`, `read_chapter_abstract`, `read_chapter_detailed`, and `list_chapters` for summaries and structure.',
       );
     }
+
+    if (!seriesId) {
+      const orphans = visibleBooks.filter((b) => !b.seriesId || !allSeries.find((s) => s.id === b.seriesId));
+      if (orphans.length > 0) {
+        sections.push('\n### Unsorted Books');
+        sections.push(
+          orphans
+            .map((b) => `- ${b.title} (id: \`${b.id}\`)${b.abstractedAt ? ' — abstract available' : ''}`)
+            .join('\n'),
+        );
+      }
+    }
+
+    base = sections.join('\n');
   }
 
-  return sections.join('\n');
+  if (currentTitle !== null) {
+    base +=
+      '\n\n## Conversation title' +
+      `\n\nCurrent title: "${currentTitle}"` +
+      '\n\nBegin every response with a title tag on its own line:' +
+      '\n<title>TITLE</title>' +
+      '\n\nTitle rules:' +
+      '\n- If the current title still accurately describes this conversation: return it unchanged.' +
+      '\n- If the current title is "Unknown" and a specific topic has emerged (book, character, theme): generate a 3–6 word Title Case title.' +
+      '\n- If the conversation topic has clearly shifted: update to a new 3–6 word Title Case title.' +
+      '\n- For pure greetings or no clear topic yet: return "Unknown".';
+  }
+
+  return base;
 }
 
 export async function streamChatAssistantReply(params: {
@@ -335,6 +373,11 @@ export async function streamChatAssistantReply(params: {
   seriesId: string | null;
 }): Promise<void> {
   const { req, reply, chatId, content, seriesId } = params;
+
+  const chat = getChat(chatId);
+  const currentTitle = chat?.title ?? 'Unknown';
+  const titleStatus = chat?.titleStatus ?? 'pending';
+  const shouldEvalTitle = titleStatus !== 'determined' && titleStatus !== 'locked';
 
   const userMessage = addMessage(chatId, 'user', content);
 
@@ -426,7 +469,7 @@ export async function streamChatAssistantReply(params: {
   );
 
   try {
-    const systemPrompt = buildSystemPrompt(seriesId, semanticOk);
+    const systemPrompt = buildSystemPrompt(seriesId, semanticOk, shouldEvalTitle ? currentTitle : null);
 
     const augmentedHistory: ChatTurn[] = history.map((turn, idx) => {
       if (idx === history.length - 1 && turn.role === 'user' && ragContext) {
@@ -445,6 +488,7 @@ export async function streamChatAssistantReply(params: {
     let llmCallId: string | null = null;
     let streamError: string | null = null;
     let promptTokens: number | null = null;
+    let extractedTitle: string | null = null;
 
     const resolved = await resolveToolCalls({
       messages: agentMessages,
@@ -456,35 +500,25 @@ export async function streamChatAssistantReply(params: {
     });
 
     if (resolved !== null) {
-      responseText = resolved.text;
+      const { title, content } = extractTitleTag(resolved.text);
+      extractedTitle = title;
+      responseText = content || resolved.text;
       llmCallId = resolved.llmCallId;
       promptTokens = resolved.promptTokens;
       if (responseText) write('token', responseText);
-    } else {
-      const result = await streamChat({
-        chatId,
-        purpose: 'chat',
-        messages: turns,
-        abortSignal: abort.signal,
-        onToken: (chunk) => write('token', chunk),
-      });
-      responseText = result.text;
-      llmCallId = result.llmCallId;
-      streamError = result.error;
-      promptTokens = result.promptTokens;
     }
 
     const assistantMessage = addMessage(chatId, 'assistant', responseText, llmCallId, ragContext?.chunkIds ?? []);
 
-    let newTitle: string | null = null;
-    try {
-      const msgs = getMessages(chatId);
-      newTitle = await evaluateTitle(chatId, msgs);
-    } catch (err) {
-      getLogger().warn({ err, chatId }, 'title evaluation threw');
+    if (shouldEvalTitle && extractedTitle !== null) {
+      const msgCount = allMessages.length + 1; // user already in allMessages; assistant just added
+      const finalise = msgCount >= 6;
+      setChatTitle(chatId, extractedTitle, finalise ? 'determined' : 'pending');
+      if (extractedTitle !== currentTitle) {
+        write('title', { title: extractedTitle });
+      }
     }
 
-    if (newTitle) write('title', { title: newTitle });
     write('done', {
       messageId: assistantMessage.id,
       llmCallId: llmCallId ?? null,

@@ -151,8 +151,32 @@
   font-size: 9px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 6px;
+}
+
+.jobStatusMain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.jobStatusActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.jobStatusLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .jobEta {
@@ -160,7 +184,6 @@
 }
 
 .cancelBtn {
-  margin-left: auto;
   padding: 1px 5px;
   font-size: 8px;
   background: transparent;
@@ -169,6 +192,7 @@
   color: var(--color-text-muted);
   cursor: pointer;
   line-height: 1.4;
+  flex-shrink: 0;
 }
 
 .cancelBtn:hover {
@@ -177,7 +201,6 @@
 }
 
 .dismissBtn {
-  margin-left: auto;
   padding: 1px 5px;
   font-size: 8px;
   background: transparent;
@@ -187,6 +210,7 @@
   cursor: pointer;
   line-height: 1.4;
   opacity: 0;
+  flex-shrink: 0;
   transition: opacity 120ms, color 120ms, border-color 120ms;
 }
 
@@ -197,6 +221,30 @@
 .dismissBtn:hover {
   border-color: var(--border-color);
   color: var(--color-text-secondary);
+}
+
+.resumeBtn {
+  padding: 4px 8px;
+  font-size: 8px;
+  background: transparent;
+  border: 1px solid var(--color-accent);
+  border-radius: 2px;
+  color: var(--color-accent);
+  cursor: pointer;
+  line-height: 1.4;
+  opacity: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: opacity 120ms, background 120ms;
+}
+
+.jobCard:hover .resumeBtn {
+  opacity: 1;
+}
+
+.resumeBtn:hover {
+  background: var(--color-accent);
+  color: var(--color-bg);
 }
 
 /* ── Progress bar ── */

@@ -25,6 +25,7 @@ interface BookRow {
   embedding_override_lock_passage_prefix: string | null;
   embedding_query_prefix_snapshot: string | null;
   embedding_passage_prefix_snapshot: string | null;
+  series_order: number | null;
   created_at: string;
 }
 
@@ -44,6 +45,7 @@ function rowToBook(row: BookRow): Book {
     year: row.year ?? undefined,
     genre: row.genre ?? undefined,
     language: row.language ?? undefined,
+    seriesOrder: row.series_order ?? undefined,
     filePath: row.file_path,
     wordCount: row.word_count,
     chunkCount: row.chunk_count,
@@ -93,9 +95,15 @@ export function createBook(input: CreateBookInput): Book {
       input.wordCount,
       now,
     );
-  return rowToBook(
-    getDb().prepare(`${BOOK_SELECT} WHERE b.id = ?`).get(id) as BookRow,
-  );
+  const db = getDb();
+  const maxRow = db
+    .prepare(
+      `SELECT MAX(series_order) AS max_order FROM books WHERE series_id = ? AND id != ?`,
+    )
+    .get(input.seriesId, id) as { max_order: number | null };
+  const nextOrder = (maxRow.max_order ?? 0) + 1;
+  db.prepare(`UPDATE books SET series_order = ? WHERE id = ?`).run(nextOrder, id);
+  return rowToBook(db.prepare(`${BOOK_SELECT} WHERE b.id = ?`).get(id) as BookRow);
 }
 
 export function saveChunks(bookId: string, chunks: RawChunk[]): void {
@@ -169,7 +177,9 @@ export function listBooks(): Book[] {
 export function listBooksBySeries(seriesId: string): Book[] {
   return (
     getDb()
-      .prepare(`${BOOK_SELECT} WHERE b.series_id = ? ORDER BY b.created_at ASC`)
+      .prepare(
+        `${BOOK_SELECT} WHERE b.series_id = ? ORDER BY COALESCE(b.series_order, 999999) ASC, b.created_at ASC`,
+      )
       .all(seriesId) as BookRow[]
   ).map(rowToBook);
 }
@@ -183,6 +193,54 @@ export function getBook(id: string): Book | undefined {
 
 export function deleteBook(id: string): void {
   getDb().prepare(`DELETE FROM books WHERE id = ?`).run(id);
+}
+
+export interface UpdateBookInput {
+  title?: string;
+  author?: string | null;
+  year?: number | null;
+  genre?: string | null;
+  language?: string | null;
+}
+
+export function updateBook(id: string, input: UpdateBookInput): Book | undefined {
+  const db = getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (input.title !== undefined) { fields.push('title = ?'); values.push(input.title); }
+  if ('author' in input) { fields.push('author = ?'); values.push(input.author ?? null); }
+  if ('year' in input) { fields.push('year = ?'); values.push(input.year ?? null); }
+  if ('genre' in input) { fields.push('genre = ?'); values.push(input.genre ?? null); }
+  if ('language' in input) { fields.push('language = ?'); values.push(input.language ?? null); }
+  if (fields.length === 0) return getBook(id);
+  values.push(id);
+  db.prepare(`UPDATE books SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return getBook(id);
+}
+
+export function reorderBooksInSeries(seriesId: string, orderedBookIds: string[]): void {
+  const db = getDb();
+  const rows = db.prepare(`SELECT id FROM books WHERE series_id = ?`).all(seriesId) as { id: string }[];
+  if (rows.length !== orderedBookIds.length) {
+    throw new Error('bookIds must list every book in the series exactly once');
+  }
+  const expected = new Set(rows.map((r) => r.id));
+  const seen = new Set<string>();
+  for (const id of orderedBookIds) {
+    if (!expected.has(id) || seen.has(id)) {
+      throw new Error('invalid or duplicate book id in bookIds');
+    }
+    seen.add(id);
+  }
+  db.transaction(() => {
+    for (let i = 0; i < orderedBookIds.length; i++) {
+      db.prepare(`UPDATE books SET series_order = ? WHERE id = ? AND series_id = ?`).run(
+        i + 1,
+        orderedBookIds[i],
+        seriesId,
+      );
+    }
+  })();
 }
 
 export interface ChunkRow {

@@ -25,6 +25,10 @@ export interface LlmConfig {
   topPs: Partial<Record<LlmProvider, number>>;
   /** Per-provider top_k; missing means omit from request (provider default). */
   topKs: Partial<Record<LlmProvider, number>>;
+  /** Saved chat model per provider — persisted across restarts for quick switching. */
+  modelsPerProvider: Partial<Record<LlmProvider, string>>;
+  /** Saved embedding model per provider — persisted across restarts for quick switching. */
+  embeddingModelsPerProvider: Partial<Record<LlmProvider, string>>;
 }
 
 export interface LlmStatus {
@@ -305,6 +309,7 @@ export interface Book {
   wordCount: number;
   chunkCount: number;
   language?: string;
+  seriesOrder?: number;
   ingestedAt?: string;
   abstractedAt?: string;
   embeddedAt?: string;

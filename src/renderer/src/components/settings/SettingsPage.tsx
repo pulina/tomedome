@@ -196,10 +196,9 @@ export function SettingsPage() {
     ]).then(([cfg, abstractCfg, rerankerCfg]) => {
       setSavedConfig(cfg ?? null);
       setForm(initialFormFromConfig(cfg ?? null));
-      // Seed per-provider memory from saved config so switching back restores the saved model
-      if (cfg?.provider && cfg?.model) {
-        setProviderModels({ [cfg.provider]: cfg.model });
-        setProviderEmbeddingModels({ [cfg.provider]: cfg.embeddingModel ?? '' });
+      if (cfg) {
+        setProviderModels({ ...(cfg.modelsPerProvider ?? {}) });
+        setProviderEmbeddingModels({ ...(cfg.embeddingModelsPerProvider ?? {}) });
       }
       if (abstractCfg) setAbstractForm(abstractCfg);
       if (rerankerCfg) setRerankerForm(rerankerCfg);

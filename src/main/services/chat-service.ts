@@ -116,6 +116,19 @@ export function getMessages(chatId: string): ChatMessage[] {
   return rows.map(messageFromRow);
 }
 
+export function deleteMessagesFrom(chatId: string, messageId: string): void {
+  const db = getDb();
+  const target = db
+    .prepare(`SELECT created_at FROM chat_messages WHERE id = ? AND chat_id = ?`)
+    .get(messageId, chatId) as { created_at: string } | undefined;
+  if (!target) return;
+  db.prepare(`DELETE FROM chat_messages WHERE chat_id = ? AND created_at >= ?`).run(
+    chatId,
+    target.created_at,
+  );
+  db.prepare(`UPDATE chats SET updated_at = ? WHERE id = ?`).run(now(), chatId);
+}
+
 /**
  * Maps assistant message id → tool UI labels for that turn (from persisted `tool_call` llm rows).
  * Pass pre-loaded `messages` to avoid a second DB query when the caller already has them.
